@@ -1,0 +1,65 @@
+/* ═══════════════════════════════════════════════════
+   variables.css  —  Design tokens: colours, spacing,
+   typography. Light + dark mode. Edit here to retheme
+   the entire app in one place.
+════════════════════════════════════════════════════ */
+
+:root {
+  /* Backgrounds */
+  --bg:       #f5f5f3;
+  --bg2:      #ffffff;
+  --bg3:      #f0eeea;
+
+  /* Text */
+  --text:     #1a1a18;
+  --text2:    #5c5c58;
+  --text3:    #9c9c96;
+
+  /* Borders */
+  --border:   rgba(0,0,0,0.09);
+  --border2:  rgba(0,0,0,0.15);
+
+  /* Brand */
+  --accent:       #185FA5;
+  --accent-bg:    #E6F1FB;
+  --accent-text:  #0C447C;
+
+  /* Semantic */
+  --success:      #3B6D11;
+  --success-bg:   #EAF3DE;
+  --warning:      #854F0B;
+  --warning-bg:   #FAEEDA;
+  --danger:       #A32D2D;
+  --danger-bg:    #FCEBEB;
+
+  /* Shape */
+  --radius:    10px;
+  --radius-sm: 7px;
+  --shadow:    0 1px 3px rgba(0,0,0,0.06);
+}
+
+[data-theme="dark"] {
+  --bg:       #1a1a18;
+  --bg2:      #242422;
+  --bg3:      #2c2c2a;
+
+  --text:     #f0eeea;
+  --text2:    #a8a8a2;
+  --text3:    #686862;
+
+  --border:   rgba(255,255,255,0.08);
+  --border2:  rgba(255,255,255,0.14);
+
+  --accent:       #378ADD;
+  --accent-bg:    #0c2540;
+  --accent-text:  #85B7EB;
+
+  --success:      #639922;
+  --success-bg:   #1a2e08;
+  --warning:      #BA7517;
+  --warning-bg:   #2a1e08;
+  --danger:       #E24B4A;
+  --danger-bg:    #2a0e0e;
+
+  --shadow:   0 1px 4px rgba(0,0,0,0.3);
+}
