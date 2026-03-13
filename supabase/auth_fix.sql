@@ -519,3 +519,15 @@ using (
   family_id = public.get_my_family_id()
   and public.get_my_role() = 'admin'
 );
+
+drop policy if exists "admins manage family member skills" on public.user_skills;
+create policy "admins manage family member skills"
+on public.user_skills for all
+using (
+  user_id in (select id from public.users where family_id = public.get_my_family_id())
+  and public.get_my_role() = 'admin'
+)
+with check (
+  user_id in (select id from public.users where family_id = public.get_my_family_id())
+  and public.get_my_role() = 'admin'
+);

@@ -19,26 +19,20 @@ window.FAMILYOS_CONFIG = window.FAMILYOS_CONFIG || {
     anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pYmFxeGlwemhmcW9zZ3poZm5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzNTg2MzksImV4cCI6MjA4ODkzNDYzOX0.5J-lO00JAS8K-no50pP3SMM4Jp-4tRMmnwiSC4Bdxm4",
   },
   ai: {
-    edgeFunctionUrl: "",
+    edgeFunctionUrl: "https://oibaqxipzhfqosgzhfng.supabase.co/functions/v1/ai-advisor",
   },
 };
 
 window.RuntimeConfig = {
   get supabaseUrl() {
-    return window.FAMILYOS_CONFIG?.supabase?.url
-      || localStorage.getItem("fos_url")
-      || "";
+    return window.FAMILYOS_CONFIG?.supabase?.url || "";
   },
 
   get supabaseAnonKey() {
-    return window.FAMILYOS_CONFIG?.supabase?.anonKey
-      || localStorage.getItem("fos_key")
-      || "";
+    return window.FAMILYOS_CONFIG?.supabase?.anonKey || "";
   },
 
   get aiEdgeFunctionUrl() {
-    return window.FAMILYOS_CONFIG?.ai?.edgeFunctionUrl
-      || localStorage.getItem("fos_ai_url")
-      || "";
+    return window.FAMILYOS_CONFIG?.ai?.edgeFunctionUrl || "";
   },
 };

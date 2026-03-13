@@ -927,6 +927,17 @@ create policy "user manages own skills"
 on user_skills for all
 using (user_id = auth.uid());
 
+create policy "admins manage family member skills"
+on user_skills for all
+using (
+  user_id in (select id from users where family_id = get_my_family_id())
+  and get_my_role() = 'admin'
+)
+with check (
+  user_id in (select id from users where family_id = get_my_family_id())
+  and get_my_role() = 'admin'
+);
+
 create policy "admins read family invites"
 on family_invites for select
 using (

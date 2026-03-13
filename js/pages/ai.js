@@ -42,7 +42,7 @@ async function renderAI() {
           <button class="btn btn-sm" onclick="generateInsights()">⚡ Generate New Insights</button>
         </div>
 
-        <!-- Ask panel + setup -->
+        <!-- Ask panel -->
         <div>
           <div class="card-title mb12">Ask the AI Advisor</div>
           <div class="card mb16">
@@ -64,33 +64,6 @@ async function renderAI() {
               'How can we grow our income?',
               'What is our biggest expense category?',
             ].map(q => `<button class="btn" style="text-align:left;" onclick="document.getElementById('ai-q').value='${q}';askAI()">${q}</button>`).join('')}
-          </div>
-
-          <div class="card">
-            <div class="card-title">🤖 AI Setup (Powered by Claude)</div>
-            <div class="setup-step"><strong>Step 1 — Supabase Edge Function</strong>
-              Supabase → Edge Functions → New Function. Name it <code>ai-advisor</code>.
-            </div>
-            <div class="setup-step"><strong>Step 2 — Add API Key</strong>
-              Supabase → Settings → Edge Function Secrets → add <code>ANTHROPIC_API_KEY</code>
-              from <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.
-            </div>
-            <div class="setup-step"><strong>Step 3 — Deploy</strong>
-              Use the function code in <code>supabase/functions/ai-advisor/index.ts</code>.
-            </div>
-            <div class="setup-step"><strong>Step 4 — Paste URL below</strong>
-              Once deployed, save the URL and the advisor will use Claude for real answers.
-            </div>
-            <div class="form-group" style="margin-top:12px;">
-              <label class="form-label">Edge Function URL (optional)</label>
-              <input id="ai-url" class="form-input"
-                placeholder="https://xxxx.supabase.co/functions/v1/ai-advisor"
-                value="${window.RuntimeConfig?.aiEdgeFunctionUrl || ''}"/>
-              <button class="btn btn-sm" style="margin-top:6px;"
-                onclick="saveAIUrl()">
-                Save URL
-              </button>
-            </div>
           </div>
         </div>
 
@@ -192,14 +165,6 @@ async function askAI() {
         Connect the Edge Function for full Claude-powered analysis.
       </div>
     </div>`;
-}
-
-function saveAIUrl() {
-  const input = document.getElementById('ai-url');
-  const url = input?.value?.trim() || '';
-  localStorage.setItem('fos_ai_url', url);
-  if (input) input.value = url;
-  alert('Edge Function URL saved.');
 }
 
 async function generateInsights() {

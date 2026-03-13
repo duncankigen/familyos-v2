@@ -17,52 +17,9 @@
 <body>
 
   <!-- ═══════════════════════════════════════════════
-       SETUP SCREEN  (shown before Supabase is configured)
-  ════════════════════════════════════════════════ -->
-  <div id="setup-screen" class="setup">
-    <div class="setup-card">
-      <div class="setup-logo">F</div>
-      <div class="setup-title">FamilyOS Setup</div>
-      <div class="setup-sub">This screen is only needed if the project is not already configured in <code>js/config.js</code>.</div>
-      <div id="startup-note" class="setup-step" style="border-left-color:var(--warning);">
-        <strong>Starting FamilyOS</strong>
-        If this page stays here for long, refresh once and check your internet connection so CDN scripts can load.
-      </div>
-
-      <div class="setup-step"><strong>Step 1: Create Supabase Project</strong>
-        Go to <a href="https://supabase.com" target="_blank">supabase.com</a> → New Project.
-      </div>
-      <div class="setup-step"><strong>Step 2: Run the SQL Schema</strong>
-        For a clean rebuild, run <code>supabase/schema_reset.sql</code> first, then run <code>supabase/schema.sql</code>.
-      </div>
-      <div class="setup-step"><strong>Step 3: Enter fallback credentials below</strong>
-        Project Settings → API → copy URL and anon key.
-      </div>
-
-      <div class="form-group" style="margin-top:20px;">
-        <label class="form-label">Supabase Project URL</label>
-        <input id="sb-url" class="form-input" placeholder="https://xxxxxxxxxxxx.supabase.co" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Supabase Anon Key</label>
-        <input id="sb-key" class="form-input" placeholder="eyJhbGci..." />
-      </div>
-      <button class="btn btn-primary" style="width:100%;" onclick="Config.save()">Connect &amp; Continue</button>
-      <p id="setup-err" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;"></p>
-
-      <hr class="divider" style="margin-top:20px;" />
-      <div style="font-size:12px;color:var(--text3);">
-        <strong style="color:var(--text2);">AI Advisor Setup (optional):</strong><br />
-        Deploy the Edge Function in <code>supabase/functions/ai-advisor/</code> and add
-        your Anthropic API key. See <code>docs/AI_SETUP.md</code> for full instructions.
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════
        AUTH SCREEN
   ════════════════════════════════════════════════ -->
-  <div id="auth-screen" class="setup" style="display:none;">
+  <div id="auth-screen" class="setup">
     <div class="setup-card">
       <div class="setup-logo">F</div>
       <div class="setup-title" id="auth-title">Sign in to FamilyOS</div>
@@ -160,7 +117,6 @@
   <script defer src="js/components/Modal.js"></script>
   <script defer src="js/components/Sidebar.js"></script>
   <script defer src="js/components/Auth.js"></script>
-  <script defer src="js/components/Config.js"></script>
 
   <!-- 3. Feature pages -->
   <script defer src="js/pages/dashboard.js"></script>

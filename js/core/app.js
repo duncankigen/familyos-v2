@@ -16,7 +16,7 @@ function toggleTheme() {
 }
 
 function show(id) {
-  ['setup-screen', 'auth-screen', 'app'].forEach((screenId) => {
+  ['auth-screen', 'app'].forEach((screenId) => {
     const el = document.getElementById(screenId);
     if (el) el.style.display = screenId === id ? 'flex' : 'none';
   });
@@ -273,8 +273,8 @@ async function init() {
     Sidebar.render();
 
     if (!DB.init()) {
-      Config.prefill();
-      show('setup-screen');
+      show('auth-screen');
+      showErr('auth-err', 'FamilyOS is not configured. Set the Supabase URL and anon key in js/config.js, then refresh.');
       return;
     }
 
@@ -287,7 +287,6 @@ async function init() {
     }
   } catch (e) {
     console.error('[App] Init failed:', e);
-    Config.prefill();
     showFatal(e?.message || 'FamilyOS could not start.');
   }
 }
