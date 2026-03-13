@@ -11,6 +11,7 @@ const State = {
   currentProfile:  null,   // public.users row
   currentFamilyId: null,   // UUID of the active family
   authSubscription: null,  // auth state listener cleanup handle
+  isBootstrapping: true,   // app is still restoring any saved auth session
   currentPage:     'dashboard',
   isDark:          localStorage.getItem('fos_theme') === 'dark',
 

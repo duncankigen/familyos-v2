@@ -16,7 +16,7 @@ function toggleTheme() {
 }
 
 function show(id) {
-  ['auth-screen', 'app'].forEach((screenId) => {
+  ['boot-screen', 'auth-screen', 'app'].forEach((screenId) => {
     const el = document.getElementById(screenId);
     if (el) el.style.display = screenId === id ? 'flex' : 'none';
   });
@@ -24,6 +24,7 @@ function show(id) {
 
 function showFatal(msg) {
   console.error('[App] Fatal startup error:', msg);
+  State.isBootstrapping = false;
   Modal.close();
   show('auth-screen');
   showErr('auth-err', msg || 'Something went wrong while starting FamilyOS.');
@@ -257,6 +258,10 @@ function installAuthListener() {
         return;
       }
 
+      if (State.isBootstrapping) {
+        return;
+      }
+
       resetSessionState();
       show('auth-screen');
     } catch (err) {
@@ -269,10 +274,13 @@ function installAuthListener() {
 
 async function init() {
   try {
+    State.isBootstrapping = true;
+    show('boot-screen');
     initTheme();
     Sidebar.render();
 
     if (!DB.init()) {
+      State.isBootstrapping = false;
       show('auth-screen');
       showErr('auth-err', 'FamilyOS is not configured. Set the Supabase URL and anon key in js/config.js, then refresh.');
       return;
@@ -288,6 +296,8 @@ async function init() {
   } catch (e) {
     console.error('[App] Init failed:', e);
     showFatal(e?.message || 'FamilyOS could not start.');
+  } finally {
+    State.isBootstrapping = false;
   }
 }
 

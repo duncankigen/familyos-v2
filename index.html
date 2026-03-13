@@ -17,10 +17,21 @@
 </head>
 <body>
 
+  <div id="boot-screen" class="setup">
+    <div class="setup-card">
+      <div class="setup-logo">F</div>
+      <div class="setup-title">Restoring your workspace</div>
+      <div class="setup-sub">Checking your saved session and loading FamilyOS.</div>
+      <div class="loading-screen" style="min-height:auto;padding-top:8px;">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════════════════════════════
        AUTH SCREEN
   ════════════════════════════════════════════════ -->
-  <div id="auth-screen" class="setup">
+  <div id="auth-screen" class="setup" style="display:none;">
     <div class="setup-card">
       <div class="setup-logo">F</div>
       <div class="setup-title" id="auth-title">Sign in to FamilyOS</div>
@@ -50,7 +61,8 @@
         <input id="auth-password-confirm" class="form-input" type="password" placeholder="••••••••" />
       </div>
 
-      <button class="btn btn-primary" style="width:100%;margin-bottom:10px;" onclick="Auth.handle()">
+      <button id="auth-submit-btn" class="btn btn-primary btn-inline" style="width:100%;margin-bottom:10px;" onclick="Auth.handle()">
+        <span id="auth-btn-spinner" class="btn-spinner" style="display:none;" aria-hidden="true"></span>
         <span id="auth-btn-text">Sign In</span>
       </button>
       <p id="auth-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none;"></p>
