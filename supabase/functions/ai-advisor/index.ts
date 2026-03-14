@@ -1,107 +1,143 @@
 /**
  * supabase/functions/ai-advisor/index.ts
- * ─────────────────────────────────────────────────────
- * Supabase Edge Function: receives a question + family
- * context from the FamilyOS app and calls Claude to
- * generate an intelligent, data-aware answer.
+ * --------------------------------------------------
+ * FamilyOS AI Advisor Edge Function
  *
- * DEPLOY:
- *   supabase functions deploy ai-advisor
- *
- * SECRETS (Supabase → Settings → Edge Function Secrets):
- *   ANTHROPIC_API_KEY = sk-ant-...
- *   ANTHROPIC_MODEL   = optional override
+ * Recommended setup:
+ * - Disable "Verify JWT" for this function in Supabase
+ * - Set secrets:
+ *   ANTHROPIC_API_KEY
+ *   EXPECTED_ANON_KEY
+ *   ALLOWED_ORIGIN (optional, defaults to FamilyOS Vercel URL)
+ *   ANTHROPIC_MODEL (optional)
  */
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+const DEFAULT_ALLOWED_ORIGIN = "https://familyos-v2.vercel.app";
 
-const CORS = {
-  "Access-Control-Allow-Origin":  "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+function corsHeaders(origin: string) {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, x-client-info, apikey, content-type",
+    "Content-Type": "application/json",
+    "Vary": "Origin",
+  };
+}
 
-serve(async (req: Request) => {
-  // Handle CORS preflight
+function json(body: unknown, status = 200, origin = DEFAULT_ALLOWED_ORIGIN) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: corsHeaders(origin),
+  });
+}
+
+function safeNumber(n: unknown) {
+  return typeof n === "number" ? n : Number(n) || 0;
+}
+
+function getAllowedOrigin(req: Request) {
+  const configured = Deno.env.get("ALLOWED_ORIGIN") || DEFAULT_ALLOWED_ORIGIN;
+  const origin = req.headers.get("origin") || configured;
+  return { configured, origin };
+}
+
+Deno.serve(async (req) => {
+  const { configured, origin } = getAllowedOrigin(req);
+
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: CORS });
+    if (origin !== configured) {
+      return json({ error: "Origin not allowed" }, 403, configured);
+    }
+    return new Response("ok", { headers: corsHeaders(configured) });
+  }
+
+  if (origin !== configured) {
+    return json({ error: "Origin not allowed" }, 403, configured);
   }
 
   try {
-    const { question, familyContext } = await req.json();
-
-    if (!question) {
-      return new Response(
-        JSON.stringify({ error: "Missing question" }),
-        { status: 400, headers: { ...CORS, "Content-Type": "application/json" } }
-      );
+    const expectedAnonKey = Deno.env.get("EXPECTED_ANON_KEY");
+    if (!expectedAnonKey) {
+      return json({ error: "EXPECTED_ANON_KEY not configured" }, 500, configured);
     }
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
-        { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
-      );
+    const apiKeyHeader = req.headers.get("apikey") || "";
+    if (!apiKeyHeader || apiKeyHeader !== expectedAnonKey) {
+      return json({ error: "Invalid apikey" }, 401, configured);
     }
 
-    // Build a context-rich system prompt
+    const payload = await req.json().catch(() => ({}));
+    const { question, familyContext } = payload;
+
+    if (!question || typeof question !== "string") {
+      return json({ error: "Missing question" }, 400, configured);
+    }
+
+    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!anthropicApiKey) {
+      return json({ error: "ANTHROPIC_API_KEY not configured" }, 500, configured);
+    }
+
+    const model = Deno.env.get("ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+    const totalContributions = safeNumber(familyContext?.totalContributions);
+    const totalExpenses = safeNumber(familyContext?.totalExpenses);
+    const netBalance = totalContributions - totalExpenses;
+
     const systemPrompt = `You are the AI Advisor for FamilyOS, a family management platform used by African extended families to manage finances, farming, construction, school fees, and family governance.
 
 Family context:
-- Total Contributions: KES ${familyContext?.totalContributions?.toLocaleString() ?? 0}
-- Total Expenses:      KES ${familyContext?.totalExpenses?.toLocaleString()      ?? 0}
-- Net Balance:         KES ${((familyContext?.totalContributions ?? 0) - (familyContext?.totalExpenses ?? 0)).toLocaleString()}
+- Total Contributions: KES ${totalContributions.toLocaleString()}
+- Total Expenses: KES ${totalExpenses.toLocaleString()}
+- Net Balance: KES ${netBalance.toLocaleString()}
 - Pending Tasks: ${familyContext?.pendingTasks ?? 0}
 - Overdue Tasks: ${familyContext?.overdueTasks ?? 0}
 - Active Goals: ${JSON.stringify(familyContext?.goals ?? [])}
+- Meetings: ${JSON.stringify(familyContext?.meetings ?? [])}
+- Documents: ${JSON.stringify(familyContext?.documents ?? {})}
 
-Provide specific, actionable, and culturally aware advice relevant to East African families managing shared resources. Be concise (under 200 words). Use KES currency. Focus on practical next steps.`;
+Provide specific, actionable, culturally aware advice relevant to East African families managing shared resources.
+Be concise, under 200 words.
+Use KES currency.
+Focus on practical next steps.`;
 
-    const model = Deno.env.get("ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "Content-Type":      "application/json",
-        "x-api-key":         apiKey,
+        "Content-Type": "application/json",
+        "x-api-key": anthropicApiKey,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
         model,
         max_tokens: 400,
-        system:     systemPrompt,
-        messages:   [{ role: "user", content: question }],
+        system: systemPrompt,
+        messages: [{ role: "user", content: question }],
       }),
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
+    const data = await anthropicRes.json().catch(() => ({}));
+    if (!anthropicRes.ok) {
       const detailMessage =
         data?.error?.message ||
         data?.message ||
         data?.error ||
         JSON.stringify(data);
       console.error("Anthropic API error:", detailMessage);
-      return new Response(
-        JSON.stringify({ error: `AI service error: ${detailMessage}`, details: data, model }),
-        { status: 502, headers: { ...CORS, "Content-Type": "application/json" } }
+      return json(
+        { error: `AI service error: ${detailMessage}`, details: data, model },
+        502,
+        configured,
       );
     }
 
-    const answer = data.content?.[0]?.text ?? "No response from AI.";
-
-    return new Response(
-      JSON.stringify({ answer }),
-      { headers: { ...CORS, "Content-Type": "application/json" } }
-    );
-
+    const answer = data?.content?.[0]?.text ?? data?.text ?? "No response from AI.";
+    return json({ answer, model }, 200, configured);
   } catch (err) {
     console.error("Edge Function error:", err);
-    return new Response(
-      JSON.stringify({ error: String(err) }),
-      { status: 500, headers: { ...CORS, "Content-Type": "application/json" } }
+    return json(
+      { error: err instanceof Error ? err.message : String(err) },
+      500,
+      configured,
     );
   }
 });

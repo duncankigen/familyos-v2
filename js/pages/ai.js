@@ -1,8 +1,8 @@
 /**
  * js/pages/ai.js
  * ─────────────────────────────────────────────────────
- * AI Advisor: uses the Supabase Edge Function when
- * configured, with a manual local fallback if needed.
+ * AI Advisor: tries the Supabase Edge Function first,
+ * then automatically falls back to local analysis.
  */
 
 function canGenerateAIInsights() {
@@ -59,7 +59,7 @@ async function renderAI() {
           <div class="card mb16">
             <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
               ${aiFunctionConfigured()
-                ? 'Questions will be sent through your configured Supabase Edge Function first.'
+                ? 'Questions will be sent through your configured AI service first. If it is unavailable, local analysis will run automatically.'
                 : 'Edge Function is not configured here, so only local analysis is available.'}
             </div>
             <div class="form-group">
@@ -67,10 +67,7 @@ async function renderAI() {
               <textarea id="ai-q" class="form-textarea" style="min-height:100px;"
                 placeholder="How are we tracking towards our goals?&#10;What should we act on this week?&#10;Which area needs attention most?"></textarea>
             </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary" onclick="askAI()">Ask AI Advisor</button>
-              ${aiFunctionConfigured() ? `<button class="btn" onclick="askAI(true)">Use local analysis</button>` : ''}
-            </div>
+            <button class="btn btn-primary" onclick="askAI()">Ask AI Advisor</button>
             <div id="ai-response" style="margin-top:14px;"></div>
           </div>
 
@@ -94,32 +91,33 @@ async function renderAI() {
   });
 }
 
-async function askAI(forceLocal = false) {
+async function askAI() {
   const question = document.getElementById('ai-q')?.value?.trim();
   if (!question) return;
   const responseEl = document.getElementById('ai-response');
   if (responseEl) responseEl.innerHTML = `<div class="loading-screen"><div class="spinner"></div>Thinking...</div>`;
 
-  if (!forceLocal && aiFunctionConfigured()) {
+  if (aiFunctionConfigured()) {
     try {
       const context = await _buildContext();
-      const { data, error } = await DB.client.functions.invoke('ai-advisor', {
-        body: { question, familyContext: context },
+      const res = await fetch(window.RuntimeConfig.aiEdgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: window.RuntimeConfig?.supabaseAnonKey || '',
+        },
+        body: JSON.stringify({ question, familyContext: context }),
       });
 
-      if (error) {
-        throw new Error(error.message || 'Edge Function request failed.');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.answer) {
+        throw new Error(data?.error || data?.message || `AI service error (${res.status})`);
       }
-
-      if (!data?.answer) {
-        throw new Error(data?.error || data?.message || 'AI service returned no answer.');
-      }
-
       const answer = data.answer;
       if (responseEl) {
         responseEl.innerHTML = `
           <div class="ai-card ai-blue">
-            <div class="ai-tag" style="color:var(--accent);">Edge Function Response</div>
+            <div class="ai-tag" style="color:var(--accent);">AI Advisor Response</div>
             <div class="ai-msg">${escapeHtml(answer)}</div>
           </div>`;
       }
@@ -127,18 +125,6 @@ async function askAI(forceLocal = false) {
       return;
     } catch (error) {
       console.error('[AI] Edge Function failed:', error);
-      if (responseEl) {
-        responseEl.innerHTML = `
-          <div class="ai-card ai-amber">
-            <div class="ai-tag" style="color:var(--warning);">Edge Function Error</div>
-            <div class="ai-msg">${escapeHtml(error.message || 'The AI service returned an error.')}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:8px;">
-              The app reached the Supabase function, but the upstream AI call failed. Check the deployed function logs and provider secret, or use the local analysis button below.
-            </div>
-            <button class="btn btn-sm" style="margin-top:10px;" onclick="askAI(true)">Use local analysis</button>
-          </div>`;
-      }
-      return;
     }
   }
 
@@ -149,7 +135,7 @@ async function askAI(forceLocal = false) {
         <div class="ai-tag" style="color:var(--accent);">AI Response (Local)</div>
         <div class="ai-msg" style="white-space:pre-line;">${escapeHtml(answer)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:8px;">
-          Local analysis uses family data already in the app. Configure the Edge Function for richer responses.
+          Local analysis was used because the AI service is unavailable or not configured.
         </div>
       </div>`;
   }
