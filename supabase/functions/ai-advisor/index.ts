@@ -6,10 +6,10 @@
  * Recommended setup:
  * - Disable "Verify JWT" for this function in Supabase
  * - Set secrets:
- *   ANTHROPIC_API_KEY
+ *   GEMINI_API_KEY
  *   EXPECTED_ANON_KEY
  *   ALLOWED_ORIGIN (optional, defaults to FamilyOS Vercel URL)
- *   ANTHROPIC_MODEL (optional)
+ *   GEMINI_MODEL (optional)
  *
  * This function does not rely on Supabase JWT auth.
  * It protects itself with origin + anon-key checks.
@@ -76,12 +76,12 @@ Deno.serve(async (req) => {
       return json({ error: "Missing question" }, 400, configured);
     }
 
-    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!anthropicApiKey) {
-      return json({ error: "ANTHROPIC_API_KEY not configured" }, 500, configured);
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
+      return json({ error: "GEMINI_API_KEY not configured" }, 500, configured);
     }
 
-    const model = Deno.env.get("ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
     const totalContributions = safeNumber(familyContext?.totalContributions);
     const totalExpenses = safeNumber(familyContext?.totalExpenses);
     const netBalance = totalContributions - totalExpenses;
@@ -103,29 +103,38 @@ Be concise, under 200 words.
 Use KES currency.
 Focus on practical next steps.`;
 
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiApiKey)}`,
+      {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": anthropicApiKey,
-        "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model,
-        max_tokens: 400,
-        system: systemPrompt,
-        messages: [{ role: "user", content: question }],
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: question }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 400,
+        },
       }),
     });
 
-    const data = await anthropicRes.json().catch(() => ({}));
-    if (!anthropicRes.ok) {
+    const data = await geminiRes.json().catch(() => ({}));
+    if (!geminiRes.ok) {
       const detailMessage =
         data?.error?.message ||
         data?.message ||
         data?.error ||
         JSON.stringify(data);
-      console.error("Anthropic API error:", detailMessage);
+      console.error("Gemini API error:", detailMessage);
       return json(
         { error: `AI service error: ${detailMessage}`, details: data, model },
         502,
@@ -133,7 +142,14 @@ Focus on practical next steps.`;
       );
     }
 
-    const answer = data?.content?.[0]?.text ?? data?.text ?? "No response from AI.";
+    const answer =
+      data?.candidates?.[0]?.content?.parts
+        ?.map((part: { text?: string }) => part?.text || "")
+        .join("")
+        .trim() ||
+      data?.text ||
+      "No response from AI.";
+
     return json({ answer, model }, 200, configured);
   } catch (err) {
     console.error("Edge Function error:", err);
