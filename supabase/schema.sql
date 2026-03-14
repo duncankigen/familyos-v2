@@ -1586,8 +1586,32 @@ create trigger log_tasks after insert on tasks
 create trigger log_projects after insert on projects
   for each row execute procedure log_activity();
 
+create or replace function log_farm_output_activity()
+returns trigger language plpgsql security definer
+as $$
+declare
+  v_family_id uuid;
+begin
+  select family_id into v_family_id
+  from projects
+  where id = new.project_id;
+
+  insert into activity_logs (family_id, user_id, action, entity_type, entity_id)
+  values (
+    v_family_id,
+    coalesce(auth.uid(), new.recorded_by),
+    tg_op,
+    tg_table_name,
+    new.id
+  );
+
+  return new;
+end;
+$$;
+
+drop trigger if exists log_farm_outputs on farm_outputs;
 create trigger log_farm_outputs after insert on farm_outputs
-  for each row execute procedure log_activity();
+  for each row execute procedure log_farm_output_activity();
 
 drop trigger if exists school_fee_payment_totals on school_fee_payments;
 create trigger school_fee_payment_totals

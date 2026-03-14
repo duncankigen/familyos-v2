@@ -49,9 +49,35 @@ with check (
   and public.get_my_role() in ('admin','project_manager')
 );
 
+create or replace function public.log_farm_output_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_family_id uuid;
+begin
+  select family_id into v_family_id
+  from public.projects
+  where id = new.project_id;
+
+  insert into public.activity_logs (family_id, user_id, action, entity_type, entity_id)
+  values (
+    v_family_id,
+    coalesce(auth.uid(), new.recorded_by),
+    tg_op,
+    tg_table_name,
+    new.id
+  );
+
+  return new;
+end;
+$$;
+
 drop trigger if exists log_farm_outputs on public.farm_outputs;
 create trigger log_farm_outputs
   after insert on public.farm_outputs
-  for each row execute procedure public.log_activity();
+  for each row execute procedure public.log_farm_output_activity();
 
 notify pgrst, 'reload schema';

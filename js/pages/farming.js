@@ -451,7 +451,7 @@ async function renderFarming() {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mb16">
         <div class="card-title">Outputs & Yield</div>
         <div class="table-wrap">
           <table>
@@ -783,7 +783,7 @@ async function openAddOutput() {
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Output Date</label>
-        <input id="farm-output-date" class="form-input" type="date" />
+        <input id="farm-output-date" class="form-input" type="date" value="${new Date().toISOString().slice(0, 10)}" />
       </div>
       <div class="form-group">
         <label class="form-label">Unit Price (KES)</label>
@@ -833,7 +833,7 @@ async function openAddOutput() {
       output_category: document.getElementById('farm-output-category')?.value || 'other',
       quantity,
       unit: document.getElementById('farm-output-unit')?.value.trim() || 'units',
-      output_date: document.getElementById('farm-output-date')?.value || null,
+      output_date: document.getElementById('farm-output-date')?.value || new Date().toISOString().slice(0, 10),
       usage_type: document.getElementById('farm-output-usage')?.value || 'other',
       unit_price: Number.isFinite(unitPrice) ? unitPrice : null,
       total_value: Number.isFinite(unitPrice) ? unitPrice * quantity : null,
