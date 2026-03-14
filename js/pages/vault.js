@@ -66,6 +66,23 @@ function documentCategoryLabel(category) {
   return labels[category] || 'Other Documents';
 }
 
+function documentLinkMeta(url) {
+  const value = String(url || '').trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.replace(/^www\./, '');
+    const isSupabaseStorage = hostname.includes('supabase.co') && parsed.pathname.includes('/storage/v1/object/');
+    return {
+      url: value,
+      hostLabel: isSupabaseStorage ? 'Stored in FamilyOS Vault' : hostname,
+      isExternal: !isSupabaseStorage,
+    };
+  } catch (_error) {
+    return { url: value, hostLabel: value, isExternal: true };
+  }
+}
+
 function documentAccessBadge(accessLevel) {
   if (accessLevel === 'admins') return '<span class="badge b-red">Admins only</span>';
   if (accessLevel === 'all') return '<span class="badge b-blue">All access</span>';
@@ -207,16 +224,31 @@ async function renderVault() {
                     ${groupedDocs[category].map((doc) => `
                       <tr>
                         <td>
-                          <div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>
-                          ${doc.file_name ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(doc.file_name)}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>` : ''}
-                          ${doc.file_url ? `<div style="font-size:11px;color:var(--text3);word-break:break-all;">${escapeHtml(doc.file_url)}</div>` : ''}
+                          ${doc.file_url ? `
+                            <a
+                              href="${doc.file_url}"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style="font-weight:700;color:var(--accent);text-decoration:none;"
+                            >
+                              ${documentIcon(doc.category)} ${escapeHtml(doc.title)}
+                            </a>
+                          ` : `<div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>`}
+                          ${doc.file_name
+                            ? (doc.file_url
+                              ? `<div style="font-size:11px;color:var(--text3);"><a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">${escapeHtml(doc.file_name)}</a>${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>`
+                              : `<div style="font-size:11px;color:var(--text3);">${escapeHtml(doc.file_name)}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>`)
+                            : ''}
+                          ${doc.file_url ? (() => {
+                            const meta = documentLinkMeta(doc.file_url);
+                            return `<div style="font-size:11px;color:var(--text3);">${escapeHtml(meta?.hostLabel || doc.file_url)}</div>`;
+                          })() : ''}
                         </td>
                         <td>${documentAccessBadge(doc.access_level)}</td>
                         <td style="font-size:12px;">${escapeHtml(doc.users?.full_name || '—')}</td>
                         <td style="font-size:12px;color:var(--text3);">${fmtDate(doc.created_at)}</td>
                         <td>
                           <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">
-                            ${doc.file_url ? `<a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm">Open</a>` : ''}
                             ${canEditDocument(doc) ? `<button class="btn btn-sm" onclick="openEditDocument('${doc.id}')">Manage</button>` : ''}
                           </div>
                         </td>
