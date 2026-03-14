@@ -102,20 +102,8 @@ async function askAI(forceLocal = false) {
 
   if (!forceLocal && aiFunctionConfigured()) {
     try {
-      const { data: sessionData, error: sessionError } = await DB.client.auth.getSession();
-      if (sessionError) {
-        throw new Error(sessionError.message || 'Unable to read your current session.');
-      }
-      const accessToken = sessionData?.session?.access_token;
-      if (!accessToken) {
-        throw new Error('Your session is missing an access token. Please sign in again and retry.');
-      }
-
       const context = await _buildContext();
       const { data, error } = await DB.client.functions.invoke('ai-advisor', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: { question, familyContext: context },
       });
 
