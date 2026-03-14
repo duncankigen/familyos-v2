@@ -249,7 +249,6 @@ async function askAI() {
             <div class="ai-msg" style="white-space:pre-line;">${escapeHtml(answer)}</div>
           </div>`;
       }
-      await saveAIInsight(question, answer);
       return;
     } catch (error) {
       console.error('[AI] Edge Function failed:', error);
@@ -320,22 +319,6 @@ async function buildLocalAIAnswer(question, context) {
   sections.push(`- Outstanding school fees: KES ${fmt(data.schoolFees.outstandingTotal)}.\n- Scheduled meetings: ${data.meetings.scheduledCount}.\n- Active goals still needing more funding: ${data.goals.topGoals.filter((goal) => goal.remaining > 0).length}.`);
 
   return sections.join('\n\n');
-}
-
-async function saveAIInsight(question, answer) {
-  if (!canGenerateAIInsights()) return;
-  const { error } = await DB.client.from('ai_insights').insert({
-    family_id: State.fid,
-    insight_type: 'planning_tip',
-    title: clipText(question, 60),
-    message: clipText(answer, 500),
-    severity: 'info',
-    expires_at: buildInsightExpiry('planning_tip'),
-  });
-
-  if (error) {
-    console.warn('[AI] Failed to save AI insight:', error);
-  }
 }
 
 async function generateInsights() {

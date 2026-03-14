@@ -4,6 +4,7 @@
  */
 
 const ANNOUNCEMENT_POST_ROLES = ['admin', 'treasurer', 'project_manager'];
+const ANNOUNCEMENT_CARD_COLORS = ['red', 'amber', 'green', 'blue'];
 
 const AnnouncementsPage = {
   items: [],
@@ -64,6 +65,31 @@ async function attachAnnouncementAuthors(items) {
     ...item,
     author: item.created_by ? (authorsById[item.created_by] || null) : null,
   }));
+}
+
+function announcementCardColor(announcement) {
+  const seed = String(
+    announcement?.created_by ||
+    announcement?.author?.id ||
+    announcement?.author?.full_name ||
+    announcement?.title ||
+    '',
+  );
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return ANNOUNCEMENT_CARD_COLORS[Math.abs(hash) % ANNOUNCEMENT_CARD_COLORS.length];
+}
+
+function announcementAccent(color) {
+  return ({
+    red: 'danger',
+    amber: 'warning',
+    green: 'success',
+    blue: 'accent',
+  })[color] || 'accent';
 }
 
 function announcementErrorMessage(error) {
@@ -143,8 +169,11 @@ function renderAnnouncementsView() {
   content.innerHTML = `
     <div class="content">
       <div class="flex-col">
-        ${AnnouncementsPage.items.map((announcement) => `
-          <div class="ai-card ai-amber" style="margin-bottom:0;">
+        ${AnnouncementsPage.items.map((announcement) => {
+          const cardColor = announcementCardColor(announcement);
+          const accent = announcementAccent(cardColor);
+          return `
+          <div class="ai-card ai-${cardColor}" style="margin-bottom:0;">
             <div class="flex-between mb8" style="align-items:flex-start;gap:12px;">
               <div class="flex gap8" style="min-width:0;">
                 ${avatarHtml(announcement.author?.full_name || 'A', 'av-sm')}
@@ -155,7 +184,7 @@ function renderAnnouncementsView() {
               </div>
               ${renderAnnouncementMenu(announcement)}
             </div>
-            <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${announcement.title}</div>
+            <div class="ai-tag" style="color:var(--${accent});">${announcement.title}</div>
             <div class="ann-flags" style="margin-bottom:8px;">
               ${announcement.is_pinned ? '<span class="badge b-amber">Pinned</span>' : ''}
               ${(announcement.updated_at && announcement.updated_at !== announcement.created_at)
@@ -163,7 +192,8 @@ function renderAnnouncementsView() {
                 : ''}
             </div>
             <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;">${announcement.message}</div>
-          </div>`).join('')}
+          </div>`;
+        }).join('')}
         ${!AnnouncementsPage.items.length ? `<div class="card">${empty('No announcements yet')}</div>` : ''}
       </div>
     </div>`;
