@@ -325,7 +325,8 @@ async function renderFarming() {
   const soldValue = farmOutputs
     .filter((item) => item.usage_type === 'sold')
     .reduce((sum, item) => sum + Number(item.total_value || 0), 0);
-  const nonsoldCount = farmOutputs.filter((item) => item.usage_type && item.usage_type !== 'sold').length;
+  const farmCost = farmActivities.reduce((sum, item) => sum + Number(item.cost || 0), 0)
+    + farmInputs.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.cost_per_unit || 0)), 0);
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -349,8 +350,8 @@ async function renderFarming() {
           <div class="metric-value" style="color:var(--accent);">${thisMonthOutputs.length}</div></div>
         <div class="metric-card"><div class="metric-label">Sold Value</div>
           <div class="metric-value" style="color:var(--success);">KES ${fmt(soldValue)}</div></div>
-        <div class="metric-card"><div class="metric-label">Stored / Used</div>
-          <div class="metric-value">${nonsoldCount}</div></div>
+        <div class="metric-card"><div class="metric-label">${scopedProject ? 'Project Cost' : 'Farm Cost'}</div>
+          <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmCost)}</div></div>
       </div>
 
       ${!FarmingPage.projects.length ? `
@@ -401,7 +402,7 @@ async function renderFarming() {
         </div>
       </div>
 
-      <div class="g2">
+      <div class="g2 mb16">
         <div class="card">
           <div class="card-title">Recent Activities</div>
           <div class="table-wrap">
@@ -451,7 +452,7 @@ async function renderFarming() {
         </div>
       </div>
 
-      <div class="card mb16">
+      <div class="card">
         <div class="card-title">Outputs & Yield</div>
         <div class="table-wrap">
           <table>
