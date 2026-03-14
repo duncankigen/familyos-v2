@@ -314,6 +314,81 @@ tbody tr:hover td        { background: var(--bg3); }
 .ann-menu-item-danger       { color: var(--danger); }
 .ann-menu-item svg          { flex-shrink: 0; }
 
+/* ── Profile center ──────────────────────────── */
+.profile-center { display: flex; flex-direction: column; gap: 14px; }
+.profile-center-subtitle {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.profile-center-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.profile-center-nav-btn {
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text2);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.profile-center-nav-btn.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: #B5D4F4;
+}
+.profile-center-section { display: flex; flex-direction: column; gap: 12px; }
+.profile-center-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent-bg), var(--bg3));
+  border: 1px solid var(--border);
+}
+.profile-center-heading {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.profile-center-copy {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.7;
+}
+.profile-center-stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.profile-center-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.profile-center-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.profile-center-meta {
+  font-size: 11px;
+  color: var(--text3);
+}
+@media (max-width: 640px) {
+  .profile-center-stack { grid-template-columns: 1fr; }
+  .profile-center-hero { align-items: flex-start; }
+}
+
 /* ── Notifications / task comments ───────────── */
 .notif-list { display: flex; flex-direction: column; gap: 10px; }
 .notif-item {

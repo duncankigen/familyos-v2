@@ -18,6 +18,10 @@ const Modal = {
   open(title, bodyHtml, buttons = []) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML    = bodyHtml;
+    const modalCard = document.querySelector('#modal .modal');
+    if (modalCard) {
+      modalCard.style.maxWidth = '';
+    }
 
     const footer = document.getElementById('modal-footer');
     footer.innerHTML = `<button class="btn" onclick="Modal.close()">Cancel</button>`;
@@ -35,6 +39,10 @@ const Modal = {
 
   /** Close the global modal. */
   close() {
+    const modalCard = document.querySelector('#modal .modal');
+    if (modalCard) {
+      modalCard.style.maxWidth = '';
+    }
     document.getElementById('modal').classList.remove('open');
   },
 };

@@ -92,21 +92,26 @@ const Sidebar = {
       </div>
       <nav class="sb-nav">${items}</nav>
       <div class="sb-footer">
-        <div class="user-pill">
+        <div class="user-pill" onclick="openProfileCenter()"
+             role="button" tabindex="0" title="Open account, help, and policy center"
+             onkeydown="if(event.key==='Enter' || event.key===' '){event.preventDefault();openProfileCenter();}">
           <div class="avatar av-md av-blue" id="sb-avatar">P</div>
           <div style="min-width:0;">
             <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
                  id="sb-username">Loading...</div>
             <div style="font-size:11px;color:var(--text3);" id="sb-role">member</div>
           </div>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;color:var(--text3);">Account</span>
           <button class="btn-icon" style="margin-left:auto;"
                   onclick="event.stopPropagation();toggleTheme()" title="Toggle dark mode">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM8 13A5 5 0 118 3v10z"/>
             </svg>
           </button>
+          </div>
         </div>
-        <button class="btn btn-sm" style="width:100%;margin-top:8px;" onclick="Auth.signOut()">Sign Out</button>
+        <button class="btn btn-sm" style="width:100%;margin-top:8px;" onclick="openProfileCenter('help')">Help & Policies</button>
       </div>`;
   },
 
