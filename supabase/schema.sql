@@ -625,7 +625,7 @@ create table if not exists documents (
   access_level text not null default 'members',
   uploaded_by uuid references users(id),
   created_at timestamptz default now(),
-  constraint doc_cat_check check (category in ('land_title','certificate','contract','medical','financial','other')),
+  constraint doc_cat_check check (category in ('land_title','certificate','contract','medical','financial','family_media','other')),
   constraint doc_access_check check (access_level in ('admins','members','all'))
 );
 

@@ -14,7 +14,30 @@ function canManageDocuments() {
 }
 
 function canEditDocument(document) {
-  return State.currentProfile?.role === 'admin' || document?.uploaded_by === State.uid;
+  return ['admin', 'treasurer'].includes(State.currentProfile?.role) || document?.uploaded_by === State.uid;
+}
+
+function describeVaultStorageError(error) {
+  const message = String(error?.message || error || '').trim();
+  const lower = message.toLowerCase();
+  if (!message) return 'Vault upload failed. Check the documents bucket and its storage policies.';
+  if (lower.includes('row-level security')) {
+    return 'Vault upload was blocked by Storage policy. Run the Vault storage SQL upgrade, then try again.';
+  }
+  if (lower.includes('bucket') || lower.includes('not found')) {
+    return 'The documents bucket is not ready yet. Run the Vault storage SQL upgrade in Supabase, then try again.';
+  }
+  return `Vault upload failed: ${message}`;
+}
+
+function describeVaultSaveError(error) {
+  const message = String(error?.message || error || '').trim();
+  const lower = message.toLowerCase();
+  if (!message) return 'Unable to save this document right now.';
+  if (lower.includes('row-level security')) {
+    return 'Vault save was blocked by database policy. Confirm you are signed in as an admin or treasurer and apply the Vault SQL upgrade.';
+  }
+  return message;
 }
 
 function documentIcon(category) {
@@ -24,9 +47,23 @@ function documentIcon(category) {
     certificate: 'CERT',
     medical: 'MED',
     financial: 'FIN',
+    family_media: 'MEDIA',
     other: 'FILE',
   };
   return iconMap[category] || 'FILE';
+}
+
+function documentCategoryLabel(category) {
+  const labels = {
+    land_title: 'Land Titles',
+    contract: 'Contracts',
+    certificate: 'Certificates',
+    medical: 'Medical Records',
+    financial: 'Financial Records',
+    family_media: 'Family Media',
+    other: 'Other Documents',
+  };
+  return labels[category] || 'Other Documents';
 }
 
 function documentAccessBadge(accessLevel) {
@@ -70,6 +107,7 @@ function vaultForm(document = null) {
             ['contract', 'Contract'],
             ['medical', 'Medical'],
             ['financial', 'Financial'],
+            ['family_media', 'Family Media / Drive Links'],
             ['other', 'Other'],
           ].map(([value, label]) => `<option value="${value}" ${document?.category === value ? 'selected' : ''}>${label}</option>`).join('')}
         </select></div>
@@ -81,11 +119,14 @@ function vaultForm(document = null) {
         </select></div>
     </div>
     <div class="form-group"><label class="form-label">Upload File (optional)</label>
-      <input id="d-file" class="form-input" type="file"/></div>
+      <input id="d-file" class="form-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.jfif,.doc,.docx,.xls,.xlsx"/></div>
     <div class="form-group"><label class="form-label">File URL (optional)</label>
-      <input id="d-url" class="form-input" placeholder="https://..." value="${escapeHtml(document?.file_url || '')}"/></div>
+      <input id="d-url" class="form-input" placeholder="https://... or shared Google Drive / Photos link" value="${escapeHtml(document?.file_url || '')}"/></div>
     <div class="form-group"><label class="form-label">File Name (optional)</label>
       <input id="d-name" class="form-input" placeholder="title-deed.pdf" value="${escapeHtml(document?.file_name || '')}"/></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px;">
+      Use <strong>Family Media</strong> for shared photo albums, memorial archives, and Drive folders the whole family should be able to open.
+    </div>
     <p id="vault-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `;
 }
@@ -119,18 +160,27 @@ async function renderVault() {
       doc.users?.full_name,
     ].some((value) => String(value || '').toLowerCase().includes(query));
   });
+  const groupedDocs = {};
+  visibleDocs.forEach((doc) => {
+    const category = doc.category || 'other';
+    if (!groupedDocs[category]) groupedDocs[category] = [];
+    groupedDocs[category].push(doc);
+  });
+  const orderedCategories = ['land_title', 'certificate', 'contract', 'financial', 'medical', 'family_media', 'other']
+    .filter((category) => groupedDocs[category]?.length);
+  const sharedWithAllCount = VaultPage.docs.filter((doc) => doc.access_level === 'all').length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total Documents</div>
           <div class="metric-value">${VaultPage.docs.length}</div></div>
-        <div class="metric-card"><div class="metric-label">Land Titles</div>
-          <div class="metric-value">${VaultPage.docs.filter((doc) => doc.category === 'land_title').length}</div></div>
-        <div class="metric-card"><div class="metric-label">Certificates</div>
-          <div class="metric-value">${VaultPage.docs.filter((doc) => doc.category === 'certificate').length}</div></div>
-        <div class="metric-card"><div class="metric-label">Contracts</div>
-          <div class="metric-value">${VaultPage.docs.filter((doc) => doc.category === 'contract').length}</div></div>
+        <div class="metric-card"><div class="metric-label">Shared With All</div>
+          <div class="metric-value">${sharedWithAllCount}</div></div>
+        <div class="metric-card"><div class="metric-label">Family Media</div>
+          <div class="metric-value">${VaultPage.docs.filter((doc) => doc.category === 'family_media').length}</div></div>
+        <div class="metric-card"><div class="metric-label">Sections</div>
+          <div class="metric-value">${new Set(VaultPage.docs.map((doc) => doc.category || 'other')).size}</div></div>
       </div>
 
       <div class="card">
@@ -138,40 +188,47 @@ async function renderVault() {
           <label class="form-label">Search Vault</label>
           <input class="form-input" placeholder="Search by title, category, file name, or member" value="${escapeHtml(VaultPage.search)}" oninput="setVaultSearch(this.value)"/>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Document</th><th>Category</th><th>Access</th><th>Added By</th><th>Date</th><th></th></tr>
-            </thead>
-            <tbody>
-              ${visibleDocs.map((doc) => `
-                <tr>
-                  <td>
-                    <div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>
-                    ${doc.file_name ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(doc.file_name)}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>` : ''}
-                  </td>
-                  <td><span class="badge b-blue">${escapeHtml((doc.category || 'other').replace('_', ' '))}</span></td>
-                  <td>${documentAccessBadge(doc.access_level)}</td>
-                  <td style="font-size:12px;">${escapeHtml(doc.users?.full_name || '—')}</td>
-                  <td style="font-size:12px;color:var(--text3);">${fmtDate(doc.created_at)}</td>
-                  <td>
-                    <div style="display:flex;gap:6px;justify-content:flex-end;">
-                      ${doc.file_url ? `<a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm">View</a>` : ''}
-                      ${canEditDocument(doc) ? `<button class="btn btn-sm" onclick="openEditDocument('${doc.id}')">Manage</button>` : ''}
-                    </div>
-                  </td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          ${orderedCategories.map((category) => `
+            <div class="card" style="background:var(--bg3);">
+              <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+                <div>
+                  <div class="card-title" style="margin-bottom:2px;">${documentCategoryLabel(category)}</div>
+                  <div style="font-size:12px;color:var(--text3);">${groupedDocs[category].length} item(s)</div>
+                </div>
+                <span class="badge b-blue">${escapeHtml(category.replace('_', ' '))}</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Document</th><th>Access</th><th>Added By</th><th>Date</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    ${groupedDocs[category].map((doc) => `
+                      <tr>
+                        <td>
+                          <div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>
+                          ${doc.file_name ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(doc.file_name)}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>` : ''}
+                          ${doc.file_url ? `<div style="font-size:11px;color:var(--text3);word-break:break-all;">${escapeHtml(doc.file_url)}</div>` : ''}
+                        </td>
+                        <td>${documentAccessBadge(doc.access_level)}</td>
+                        <td style="font-size:12px;">${escapeHtml(doc.users?.full_name || '—')}</td>
+                        <td style="font-size:12px;color:var(--text3);">${fmtDate(doc.created_at)}</td>
+                        <td>
+                          <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;">
+                            ${doc.file_url ? `<a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" class="btn btn-sm">Open</a>` : ''}
+                            ${canEditDocument(doc) ? `<button class="btn btn-sm" onclick="openEditDocument('${doc.id}')">Manage</button>` : ''}
+                          </div>
+                        </td>
+                      </tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>`).join('')}
         </div>
         ${!visibleDocs.length ? empty(VaultPage.docs.length ? 'No documents match your search' : 'No documents in vault yet') : ''}
       </div>
 
-      <div class="card" style="margin-top:14px;background:var(--bg3);">
-        <div style="font-size:12px;color:var(--text2);">
-          To use uploads, create a Storage bucket named <code>documents</code>. If the bucket is not ready yet, you can still paste a file URL manually.
-        </div>
-      </div>
     </div>`;
 }
 
@@ -217,7 +274,7 @@ async function saveDocument(documentId = null) {
   if (file) {
     const upload = await uploadVaultFile(file);
     if (upload?.error) {
-      showErr('vault-err', upload.error.message || 'Failed to upload file.');
+      showErr('vault-err', describeVaultStorageError(upload.error));
       return;
     }
     fileUrl = upload.url;
@@ -243,7 +300,7 @@ async function saveDocument(documentId = null) {
 
   const { error } = await query;
   if (error) {
-    showErr('vault-err', error.message);
+    showErr('vault-err', describeVaultSaveError(error));
     return;
   }
 

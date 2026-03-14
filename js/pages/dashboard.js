@@ -117,17 +117,12 @@ async function renderDashboard() {
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
-      <div class="card mb16" style="border-left:3px solid var(--accent);">
-        <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
-          <div>
-            <div class="card-title" style="margin-bottom:4px;">Meeting-Ready Dashboard Snapshot</div>
-            <div style="font-size:13px;color:var(--text2);">
-              Export this dashboard as a CSV snapshot or print the view for family meetings, treasurer updates, and progress check-ins.
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--text3);">Generated ${fmtDate(now.toISOString())}</div>
-        </div>
-      </div>
+      ${renderGuidanceNote(
+        'dashboard_exports',
+        'Dashboard snapshot tools',
+        'Export or print this page when you want a quick family snapshot for meetings or check-ins.',
+        `Generated ${fmtDate(now.toISOString())}`
+      )}
 
       <div class="g4 mb16">
         <div class="metric-card">

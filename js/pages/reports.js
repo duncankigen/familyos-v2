@@ -212,17 +212,12 @@ async function renderReports() {
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
-      <div class="card mb16" style="border-left:3px solid var(--accent);">
-        <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
-          <div>
-            <div class="card-title" style="margin-bottom:4px;">Exportable Family Reports</div>
-            <div style="font-size:13px;color:var(--text2);">
-              Download clean CSV files for contributions, expenses, and the overall family summary, or print this view for meetings.
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--text3);">Generated ${fmtDate(now.toISOString())}</div>
-        </div>
-      </div>
+      ${renderGuidanceNote(
+        'reports_exports',
+        'Reports export tools',
+        'Download CSV exports or print this report when you need to share figures outside the system.',
+        `Generated ${fmtDate(now.toISOString())}`
+      )}
 
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total Contributions</div>

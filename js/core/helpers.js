@@ -204,6 +204,35 @@ function openPrintDocument(title, bodyHtml) {
   return true;
 }
 
+/** Return whether a dismissible guidance note was already closed. */
+function isGuidanceDismissed(key) {
+  return localStorage.getItem(`fos_notice_${key}`) === '1';
+}
+
+/** Dismiss a guidance note and re-render the current page. */
+function dismissGuidanceNote(key) {
+  localStorage.setItem(`fos_notice_${key}`, '1');
+  renderPage();
+}
+
+/** Render a small dismissible guidance note. */
+function renderGuidanceNote(key, title, message, meta = '') {
+  if (!key || isGuidanceDismissed(key)) return '';
+  return `
+    <div class="card mb16" style="border-left:3px solid var(--accent);background:var(--bg3);">
+      <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1 1 260px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px;">${escapeHtml(title)}</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.6;">${escapeHtml(message)}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${meta ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(meta)}</div>` : ''}
+          <button class="btn btn-sm" style="padding:4px 8px;min-width:auto;" onclick="dismissGuidanceNote('${escapeHtml(key)}')">X</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 /** Upload a single optional record attachment and return a public URL plus label. */
 async function uploadFinanceAttachment(file, folder) {
   if (!file) return { url: null, name: null };
