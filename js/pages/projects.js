@@ -7,6 +7,8 @@
 const ProjectsPage = {
   projects: [],
   membersById: {},
+  vendors: [],
+  vendorsById: {},
   leadersByProject: {},
   projectMembers: [],
   detailStorageKey: 'fos_project_detail',
@@ -67,6 +69,100 @@ function backToProjects() {
 
 function canManageProjectTeam() {
   return canManageProjects();
+}
+
+function canCreateProjectExpense() {
+  return ['admin', 'treasurer', 'project_manager'].includes(State.currentProfile?.role);
+}
+
+function canCreateProjectTask() {
+  return ['admin', 'project_manager', 'treasurer'].includes(State.currentProfile?.role);
+}
+
+function canLogProjectActivity() {
+  return ['admin', 'project_manager'].includes(State.currentProfile?.role);
+}
+
+function projectActivityForm() {
+  return `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Activity Type</label>
+        <select id="proj-act-type" class="form-select">
+          ${['update', 'site_visit', 'procurement', 'review', 'milestone', 'payment', 'other'].map((value) => `
+            <option value="${value}">${value.replace('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase())}</option>
+          `).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Date</label>
+        <input id="proj-act-date" class="form-input" type="date" value="${new Date().toISOString().slice(0, 10)}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Cost (KES)</label>
+        <input id="proj-act-cost" class="form-input" type="number" placeholder="Optional"/></div>
+      <div class="form-group"><label class="form-label">Description</label>
+        <input id="proj-act-desc" class="form-input" placeholder="What happened or what needs follow-up?" /></div>
+    </div>
+    <p id="project-activity-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
+function projectExpenseForm(projectId) {
+  return `
+    <div class="form-group"><label class="form-label">Description</label>
+      <input id="proj-exp-desc" class="form-input" placeholder="Cement purchase, legal fee, transport..." /></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Amount (KES)</label>
+        <input id="proj-exp-amount" class="form-input" type="number" placeholder="5000" /></div>
+      <div class="form-group"><label class="form-label">Category</label>
+        <select id="proj-exp-cat" class="form-select">
+          ${['materials', 'labor', 'transport', 'equipment', 'services', 'other'].map((value) => `
+            <option value="${value}">${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Vendor</label>
+        <select id="proj-exp-vendor" class="form-select">
+          <option value="">- None -</option>
+          ${ProjectsPage.vendors.map((vendor) => `<option value="${vendor.id}">${escapeHtml(vendor.name)}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Reference</label>
+        <input id="proj-exp-ref" class="form-input" placeholder="Invoice / M-Pesa reference" /></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label>
+      <textarea id="proj-exp-notes" class="form-textarea" placeholder="Optional notes for this project expense"></textarea></div>
+    <input id="proj-exp-project" type="hidden" value="${projectId}" />
+    <p id="project-expense-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
+function projectTaskForm(projectId) {
+  return `
+    <div class="form-group"><label class="form-label">Task Title</label>
+      <input id="proj-task-title" class="form-input" placeholder="Follow up on contractor quote" /></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="proj-task-desc" class="form-textarea" placeholder="Task details..."></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Assign To</label>
+        <select id="proj-task-user" class="form-select">
+          <option value="">- Unassigned -</option>
+          ${Object.values(ProjectsPage.membersById).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Priority</label>
+        <select id="proj-task-priority" class="form-select">
+          ${['low', 'medium', 'high', 'urgent'].map((value) => `<option value="${value}" ${value === 'medium' ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Deadline</label>
+        <input id="proj-task-deadline" class="form-input" type="date" /></div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="proj-task-status" class="form-select">
+          ${['pending', 'in_progress', 'completed', 'cancelled'].map((value) => `<option value="${value}" ${value === 'pending' ? 'selected' : ''}>${value.replace('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase())}</option>`).join('')}
+        </select></div>
+    </div>
+    <input id="proj-task-project" type="hidden" value="${projectId}" />
+    <p id="project-task-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
 }
 
 function projectForm(project = null) {
@@ -221,6 +317,7 @@ async function renderProjectDetail() {
   const [
     { data: project, error: projectError },
     { data: members, error: memberError },
+    { data: vendors, error: vendorError },
     { data: projectMembers, error: projectMembersError },
     { data: tasks, error: taskError },
     { data: activities, error: activityError },
@@ -228,14 +325,15 @@ async function renderProjectDetail() {
   ] = await Promise.all([
     sb.from('projects').select('*').eq('family_id', State.fid).eq('id', projectId).maybeSingle(),
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
+    sb.from('vendors').select('id,name').eq('family_id', State.fid).order('name'),
     sb.from('project_members').select('project_id,user_id,role').eq('project_id', projectId),
     sb.from('tasks').select('id,title,status,priority,deadline,assigned_user,completed_at').eq('family_id', State.fid).eq('project_id', projectId).order('deadline', { ascending: true }).limit(6),
     sb.from('project_activities').select('id,activity_type,description,activity_date,cost,created_by').eq('project_id', projectId).order('activity_date', { ascending: false }).limit(6),
-    sb.from('expenses').select('id,amount,description,created_at').eq('family_id', State.fid).eq('project_id', projectId).order('created_at', { ascending: false }).limit(6),
+    sb.from('expenses').select('id,amount,description,created_at,category,vendor_id').eq('family_id', State.fid).eq('project_id', projectId).order('created_at', { ascending: false }).limit(6),
   ]);
 
-  if (projectError || memberError || projectMembersError || taskError || activityError || expenseError) {
-    console.error('[Projects] Failed to load project detail:', projectError || memberError || projectMembersError || taskError || activityError || expenseError);
+  if (projectError || memberError || vendorError || projectMembersError || taskError || activityError || expenseError) {
+    console.error('[Projects] Failed to load project detail:', projectError || memberError || vendorError || projectMembersError || taskError || activityError || expenseError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load this project right now')}</div>
@@ -258,6 +356,8 @@ async function renderProjectDetail() {
   }
 
   ProjectsPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
+  ProjectsPage.vendors = vendors || [];
+  ProjectsPage.vendorsById = Object.fromEntries((ProjectsPage.vendors || []).map((vendor) => [vendor.id, vendor]));
   const teamRows = (projectMembers || []).map((row) => ({
     ...row,
     member: ProjectsPage.membersById[row.user_id] || null,
@@ -270,11 +370,13 @@ async function renderProjectDetail() {
   const remaining = budget - totalSpent;
   const openTasks = (tasks || []).filter((task) => task.status !== 'completed').length;
   const completedTasks = (tasks || []).filter((task) => task.status === 'completed').length;
+  const latestActivityDate = activities?.[0]?.activity_date || '';
+  const isFarmingProject = project.project_type === 'farming';
 
   setTopbar(project.name, `
     <button class="btn btn-sm" onclick="backToProjects()">Back to Projects</button>
     ${canManageProjects() ? `<button class="btn btn-sm" onclick="openEditProject('${project.id}')">Manage Project</button>` : ''}
-    ${project.project_type === 'farming' ? `<button class="btn btn-primary btn-sm" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
+    ${isFarmingProject ? `<button class="btn btn-primary btn-sm" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
   `);
   document.querySelectorAll('.sb-item').forEach((item) => {
     item.classList.toggle('active', item.dataset.page === 'projects');
@@ -294,9 +396,9 @@ async function renderProjectDetail() {
           <div class="metric-sub">${expenses?.length || 0} recent expense entries</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Team Members</div>
-          <div class="metric-value">${teamRows.length}</div>
-          <div class="metric-sub">Leader: ${escapeHtml(leaderName)}</div>
+          <div class="metric-label">Activity Log</div>
+          <div class="metric-value">${activities?.length || 0}</div>
+          <div class="metric-sub">${latestActivityDate ? `Latest ${fmtDate(latestActivityDate)}` : 'No updates logged yet'}</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Tasks</div>
@@ -357,14 +459,17 @@ async function renderProjectDetail() {
 
       <div class="g2">
         <div class="card">
-          <div class="card-title">Recent Tasks</div>
+          <div class="flex-between mb8">
+            <div class="card-title" style="margin-bottom:0;">Recent Tasks</div>
+            ${canCreateProjectTask() ? `<button class="btn btn-sm" onclick="openProjectTaskModal('${project.id}')">+ Add Task</button>` : ''}
+          </div>
           ${(tasks || []).map((task) => `
             <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
               <div>
                 <div style="font-size:13px;font-weight:600;">${escapeHtml(task.title)}</div>
                 <div style="font-size:11px;color:var(--text3);">
                   ${task.assigned_user ? `Assigned: ${escapeHtml(ProjectsPage.membersById[task.assigned_user]?.full_name || 'Unknown')}` : 'Unassigned'}
-                  ${task.deadline ? ` | Due: ${fmtDate(task.deadline)}` : ''}
+                  ${task.deadline ? ` | Due: ${fmtDate(task.deadline)}` : ''} | ${escapeHtml(task.priority || 'medium')}
                 </div>
               </div>
               ${statusBadge(task.status)}
@@ -374,7 +479,10 @@ async function renderProjectDetail() {
         </div>
 
         <div class="card">
-          <div class="card-title">Recent Activity</div>
+          <div class="flex-between mb8">
+            <div class="card-title" style="margin-bottom:0;">Recent Activity</div>
+            ${canLogProjectActivity() && !isFarmingProject ? `<button class="btn btn-sm" onclick="openProjectActivityModal('${project.id}')">+ Add Activity</button>` : ''}
+          </div>
           ${(activities || []).map((activity) => `
             <div class="mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
               <div class="flex-between">
@@ -394,17 +502,157 @@ async function renderProjectDetail() {
 
       <div class="card" style="margin-top:16px;">
         <div class="card-title">Recent Expenses</div>
-        ${(expenses || []).map((expense) => `
+          ${(expenses || []).map((expense) => `
           <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
             <div>
               <div style="font-size:13px;font-weight:600;">${escapeHtml(expense.description || 'Expense')}</div>
-              <div style="font-size:11px;color:var(--text3);">${fmtDate(expense.created_at)}</div>
+              <div style="font-size:11px;color:var(--text3);">
+                ${fmtDate(expense.created_at)}
+                ${expense.category ? ` | ${escapeHtml(expense.category)}` : ''}
+                ${expense.vendor_id ? ` | ${escapeHtml(ProjectsPage.vendorsById[expense.vendor_id]?.name || 'Vendor')}` : ''}
+              </div>
             </div>
             <div style="font-size:13px;font-weight:700;color:var(--warning);">KES ${fmt(expense.amount || 0)}</div>
           </div>`).join('')}
         ${!(expenses || []).length ? empty('No expenses linked to this project yet') : ''}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          ${canCreateProjectExpense() && !isFarmingProject ? `<button class="btn btn-sm" onclick="openProjectExpenseModal('${project.id}')">+ Add Expense</button>` : ''}
+          <button class="btn btn-sm" onclick="nav('expenses')">Open Expenses</button>
+        </div>
       </div>
     </div>`;
+}
+
+function openProjectActivityModal(projectId) {
+  if (!canLogProjectActivity()) return;
+  Modal.open('Log Project Activity', projectActivityForm(), [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: async () => saveProjectActivity(projectId),
+  }]);
+}
+
+async function saveProjectActivity(projectId) {
+  hideErr('project-activity-err');
+  const description = document.getElementById('proj-act-desc')?.value.trim() || '';
+  if (!description) {
+    showErr('project-activity-err', 'Describe the activity or update.');
+    return;
+  }
+
+  const { error } = await DB.client.from('project_activities').insert({
+    project_id: projectId,
+    activity_type: document.getElementById('proj-act-type')?.value || 'other',
+    activity_date: document.getElementById('proj-act-date')?.value || new Date().toISOString().slice(0, 10),
+    description,
+    cost: parseFloat(document.getElementById('proj-act-cost')?.value || '') || 0,
+    created_by: State.uid,
+  });
+
+  if (error) {
+    showErr('project-activity-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('project-detail');
+}
+
+function openProjectExpenseModal(projectId) {
+  if (!canCreateProjectExpense()) return;
+  Modal.open('Add Project Expense', projectExpenseForm(projectId), [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: async () => saveProjectExpense(projectId),
+  }]);
+}
+
+async function saveProjectExpense(projectId) {
+  hideErr('project-expense-err');
+  const description = document.getElementById('proj-exp-desc')?.value.trim() || '';
+  const amount = parseFloat(document.getElementById('proj-exp-amount')?.value || '');
+
+  if (!description) {
+    showErr('project-expense-err', 'Description is required.');
+    return;
+  }
+  if (!amount || amount <= 0) {
+    showErr('project-expense-err', 'Enter a valid amount greater than zero.');
+    return;
+  }
+
+  const { error } = await DB.client.from('expenses').insert({
+    family_id: State.fid,
+    created_by: State.uid,
+    project_id: projectId,
+    amount,
+    description,
+    category: document.getElementById('proj-exp-cat')?.value || 'other',
+    vendor_id: document.getElementById('proj-exp-vendor')?.value || null,
+    reference: document.getElementById('proj-exp-ref')?.value.trim() || null,
+    notes: document.getElementById('proj-exp-notes')?.value.trim() || null,
+  });
+
+  if (error) {
+    showErr('project-expense-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('project-detail');
+}
+
+function openProjectTaskModal(projectId) {
+  if (!canCreateProjectTask()) return;
+  Modal.open('Add Project Task', projectTaskForm(projectId), [{
+    label: 'Create',
+    cls: 'btn-primary',
+    fn: async () => saveProjectTask(projectId),
+  }]);
+}
+
+async function saveProjectTask(projectId) {
+  hideErr('project-task-err');
+  const title = document.getElementById('proj-task-title')?.value.trim() || '';
+  if (!title) {
+    showErr('project-task-err', 'Task title is required.');
+    return;
+  }
+
+  const status = document.getElementById('proj-task-status')?.value || 'pending';
+  const payload = {
+    family_id: State.fid,
+    project_id: projectId,
+    title,
+    description: document.getElementById('proj-task-desc')?.value.trim() || null,
+    assigned_user: document.getElementById('proj-task-user')?.value || null,
+    assigned_vendor: null,
+    deadline: document.getElementById('proj-task-deadline')?.value || null,
+    priority: document.getElementById('proj-task-priority')?.value || 'medium',
+    status,
+    completed_at: status === 'completed' ? new Date().toISOString() : null,
+    created_by: State.uid,
+  };
+
+  const { data, error } = await DB.client.from('tasks').insert(payload).select('id,project_id,title,assigned_user').single();
+  if (error) {
+    showErr('project-task-err', error.message);
+    return;
+  }
+
+  if (data?.assigned_user && data.assigned_user !== State.uid) {
+    const projectName = ProjectsPage.projects.find((item) => item.id === projectId)?.name || 'a project';
+    await Notifications.notifyUsers([data.assigned_user], {
+      title: 'Task assigned to you',
+      message: `${data.title} was assigned to you in ${projectName}.`,
+      type: 'info',
+      entity_type: 'task',
+      entity_id: data.id,
+    });
+  }
+
+  Modal.close();
+  renderPage('project-detail');
 }
 
 function openEditProject(projectId) {
