@@ -83,6 +83,178 @@ function canLogProjectActivity() {
   return ['admin', 'project_manager'].includes(State.currentProfile?.role);
 }
 
+function projectTopVendor(expenses) {
+  const vendorSpend = {};
+  (expenses || []).forEach((expense) => {
+    if (!expense.vendor_id) return;
+    vendorSpend[expense.vendor_id] = (vendorSpend[expense.vendor_id] || 0) + Number(expense.amount || 0);
+  });
+  const top = Object.entries(vendorSpend).sort((a, b) => b[1] - a[1])[0];
+  return top ? { vendorId: top[0], amount: top[1] } : null;
+}
+
+function projectExpenseCategories(expenses) {
+  const totals = {};
+  (expenses || []).forEach((expense) => {
+    const category = expense.category || 'other';
+    totals[category] = (totals[category] || 0) + Number(expense.amount || 0);
+  });
+  return Object.entries(totals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, amount]) => ({ category, amount }));
+}
+
+function projectLatestActivity(activities, matcher = null) {
+  return (activities || []).find((activity) => !matcher || matcher(activity)) || null;
+}
+
+function projectNextTask(tasks) {
+  return (tasks || []).find((task) => task.status !== 'completed' && task.status !== 'cancelled') || null;
+}
+
+function renderProjectTypeHighlights(project, tasks, activities, expenses) {
+  const topVendor = projectTopVendor(expenses);
+  const topVendorName = topVendor ? (ProjectsPage.vendorsById[topVendor.vendorId]?.name || 'Vendor') : '';
+  const categories = projectExpenseCategories(expenses);
+  const topCategory = categories[0];
+  const nextTask = projectNextTask(tasks);
+  const latestMilestone = projectLatestActivity(activities, (activity) => activity.activity_type === 'milestone');
+  const latestReview = projectLatestActivity(activities, (activity) => activity.activity_type === 'review');
+  const latestUpdate = projectLatestActivity(activities);
+  const linkedVendorCount = [...new Set((expenses || []).map((expense) => expense.vendor_id).filter(Boolean))].length;
+  const highPriorityCount = (tasks || []).filter((task) => ['high', 'urgent'].includes(task.priority)).length;
+  const procurementSpend = (expenses || [])
+    .filter((expense) => ['materials', 'equipment', 'transport'].includes(expense.category))
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const serviceSpend = (expenses || [])
+    .filter((expense) => ['services', 'labor'].includes(expense.category))
+    .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+
+  let title = 'Project Focus';
+  let points = [];
+
+  if (project.project_type === 'construction') {
+    title = 'Construction Focus';
+    points = [
+      latestMilestone?.description
+        ? `Current stage: ${escapeHtml(latestMilestone.description)}`
+        : latestUpdate?.description
+          ? `Latest site update: ${escapeHtml(latestUpdate.description)}`
+          : 'Current stage: no milestone or site update logged yet.',
+      `Procurement-linked spend: KES ${fmt(procurementSpend)}${topCategory ? `, led by ${escapeHtml(topCategory.category)}` : ''}.`,
+      linkedVendorCount
+        ? `Active contractor or supplier footprint: ${linkedVendorCount} vendor(s)${topVendor ? `, with ${escapeHtml(topVendorName)} leading at KES ${fmt(topVendor.amount)}` : ''}.`
+        : 'No linked contractor or supplier spend has been recorded yet.',
+      nextTask
+        ? `Next site action: ${escapeHtml(nextTask.title)}${nextTask.deadline ? ` by ${fmtDate(nextTask.deadline)}` : ''}.`
+        : 'No next site action is assigned yet.',
+    ];
+  } else if (project.project_type === 'business') {
+    title = 'Business Focus';
+    points = [
+      `Operating cost recorded so far: KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
+      topCategory
+        ? `Main cost driver right now is ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
+        : 'No operating cost pattern is clear yet because few expenses are linked.',
+      linkedVendorCount
+        ? `Supplier activity involves ${linkedVendorCount} vendor(s)${topVendor ? `, with ${escapeHtml(topVendorName)} currently the heaviest spend` : ''}.`
+        : 'No suppliers or vendors are linked yet.',
+      highPriorityCount
+        ? `${highPriorityCount} high-priority task(s) need follow-up before operations slow down.`
+        : 'There are no high-priority execution blockers right now.',
+    ];
+  } else if (project.project_type === 'investment') {
+    title = 'Investment Focus';
+    points = [
+      `Capital deployed into this investment currently totals KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
+      latestReview?.description
+        ? `Latest review note: ${escapeHtml(latestReview.description)}`
+        : latestUpdate?.description
+          ? `Latest investment update: ${escapeHtml(latestUpdate.description)}`
+          : 'No review note has been logged yet.',
+      linkedVendorCount
+        ? `External counterparties involved: ${linkedVendorCount}${topVendor ? `, with ${escapeHtml(topVendorName)} carrying the largest linked amount` : ''}.`
+        : 'No advisor, broker, or vendor-linked expense is recorded yet.',
+      nextTask
+        ? `Next review action: ${escapeHtml(nextTask.title)}${nextTask.deadline ? ` by ${fmtDate(nextTask.deadline)}` : ''}.`
+        : 'No next review action has been assigned yet.',
+    ];
+  } else {
+    title = 'Operational Focus';
+    points = [
+      latestUpdate?.description
+        ? `Latest update: ${escapeHtml(latestUpdate.description)}`
+        : 'No project update has been logged yet.',
+      topCategory
+        ? `Current spend is concentrated in ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
+        : 'No meaningful expense pattern is visible yet.',
+      nextTask
+        ? `Next important action is ${escapeHtml(nextTask.title)}${nextTask.deadline ? ` by ${fmtDate(nextTask.deadline)}` : ''}.`
+        : 'No next action has been assigned yet.',
+      linkedVendorCount
+        ? `This project already uses ${linkedVendorCount} linked vendor(s).`
+        : 'No vendors are linked to this project yet.',
+    ];
+  }
+
+  return `
+    <div class="card">
+      <div class="card-title">${title}</div>
+      <div class="flex-col">
+        ${points.map((point) => `
+          <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.6;">
+            ${point}
+          </div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderProjectOperationalHighlights(project, tasks, activities, expenses) {
+  const nextTask = projectNextTask(tasks);
+  const latestUpdate = projectLatestActivity(activities);
+  const topVendor = projectTopVendor(expenses);
+  const topVendorName = topVendor ? (ProjectsPage.vendorsById[topVendor.vendorId]?.name || 'Vendor') : '';
+  const totalExpenseCount = (expenses || []).length;
+
+  return `
+    <div class="card">
+      <div class="card-title">Operational Highlights</div>
+      <div class="g2 mb12">
+        <div class="metric-card">
+          <div class="metric-label">Recent Spend Items</div>
+          <div class="metric-value">${totalExpenseCount}</div>
+          <div class="metric-sub">Latest linked costs on this project</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">High Priority Tasks</div>
+          <div class="metric-value">${(tasks || []).filter((task) => ['high', 'urgent'].includes(task.priority)).length}</div>
+          <div class="metric-sub">Execution pressure to watch</div>
+        </div>
+      </div>
+      <div class="flex-col">
+        <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.6;">
+          ${nextTask
+            ? `Next task: ${escapeHtml(nextTask.title)}${nextTask.deadline ? ` by ${fmtDate(nextTask.deadline)}` : ''}.`
+            : 'No next task has been assigned yet.'}
+        </div>
+        <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.6;">
+          ${latestUpdate
+            ? `Latest logged update was ${fmtDate(latestUpdate.activity_date)} under ${escapeHtml(latestUpdate.activity_type || 'activity')}.`
+            : 'No activity update has been logged yet.'}
+        </div>
+        <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);line-height:1.6;">
+          ${topVendor
+            ? `Top linked vendor is ${escapeHtml(topVendorName)} with KES ${fmt(topVendor.amount)} in recent tracked spend.`
+            : project.project_type === 'farming'
+              ? 'Vendor summary is managed more deeply inside Farm Manager.'
+              : 'No linked vendor spend has been recorded yet.'}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function projectActivityForm() {
   return `
     <div class="form-row">
@@ -456,6 +628,13 @@ async function renderProjectDetail() {
           ${!teamRows.length ? empty('No project members assigned yet') : ''}
         </div>
       </div>
+
+      ${!isFarmingProject ? `
+        <div class="g2 mb16">
+          ${renderProjectTypeHighlights(project, tasks || [], activities || [], expenses || [])}
+          ${renderProjectOperationalHighlights(project, tasks || [], activities || [], expenses || [])}
+        </div>
+      ` : ''}
 
       <div class="g2">
         <div class="card">
