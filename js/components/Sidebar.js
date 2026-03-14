@@ -135,6 +135,12 @@ const Sidebar = {
     el.style.display = show ? 'inline-flex' : 'none';
   },
 
+  // Backward-compatible wrapper for older code paths.
+  updateAnnouncementBadge(count) {
+    State.unreadAnnouncements = Number(count || 0);
+    this.updateSectionIndicator('announcements', count || 0);
+  },
+
   async markSectionSeen(page) {
     const field = SECTION_SEEN_FIELDS[page];
     if (!field || !State.uid || !State.currentProfile) return;

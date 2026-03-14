@@ -188,7 +188,11 @@ async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
   setSidebarIdentity(profile, user);
-  Sidebar.updateAnnouncementBadge(0);
+  Sidebar.updateSectionIndicator('announcements', 0);
+  Sidebar.updateSectionIndicator('tasks', 0);
+  Sidebar.updateSectionIndicator('meetings', false);
+  Sidebar.updateSectionIndicator('goals', false);
+  Sidebar.updateSectionIndicator('ai', false);
 
   if (!State.currentFamilyId) {
     showFamilySetup();
