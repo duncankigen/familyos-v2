@@ -3,7 +3,7 @@
 -- Safe to run on an existing project
 -- ============================================================
 
-create extension if not exists "uuid-ossp";
+create extension if not exists pgcrypto;
 
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user() cascade;
@@ -81,7 +81,7 @@ begin
 end $$;
 
 create table if not exists public.family_invites (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   family_id uuid not null references public.families(id) on delete cascade,
   email text,
   role text not null default 'member',
@@ -108,6 +108,7 @@ alter table public.family_invites add column if not exists accepted_at timestamp
 alter table public.family_invites add column if not exists created_at timestamptz default now();
 
 alter table public.family_invites alter column family_id set not null;
+alter table public.family_invites alter column id set default gen_random_uuid();
 alter table public.family_invites alter column role set default 'member';
 alter table public.family_invites alter column role set not null;
 alter table public.family_invites alter column invite_code set not null;
@@ -348,7 +349,7 @@ begin
   v_expires_at := now() + make_interval(days => greatest(coalesce(p_days_valid, 14), 1));
 
   loop
-    v_code := upper(substr(replace(uuid_generate_v4()::text, '-', ''), 1, 10));
+    v_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
 
     begin
       insert into public.family_invites (

@@ -128,7 +128,7 @@ create table if not exists user_skills (
 );
 
 create table if not exists family_invites (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   family_id uuid not null references families(id) on delete cascade,
   email text,
   role text not null default 'member',
@@ -789,7 +789,7 @@ begin
   v_expires_at := now() + make_interval(days => greatest(coalesce(p_days_valid, 14), 1));
 
   loop
-    v_code := upper(substr(replace(uuid_generate_v4()::text, '-', ''), 1, 10));
+    v_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
 
     begin
       insert into public.family_invites (
