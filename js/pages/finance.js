@@ -63,14 +63,15 @@ async function renderFinance() {
   setTopbar('Finance Overview');
   const fid = State.fid;
 
-  const [{ data: contrib, error: contribError }, { data: accounts, error: accountsError }, summary] = await Promise.all([
+  const [{ data: contrib, error: contribError }, { data: accounts, error: accountsError }, { data: schoolFees, error: schoolFeesError }, summary] = await Promise.all([
     DB.client.from('contributions').select('amount,contribution_type').eq('family_id', fid),
     DB.client.from('payment_accounts').select('*').eq('family_id', fid),
+    DB.client.from('school_fees').select('student_id,total_fee,paid_amount').eq('family_id', fid),
     fetchFinanceSummary(fid),
   ]);
 
-  if (contribError || accountsError) {
-    console.error('[Finance] Failed to load:', contribError || accountsError);
+  if (contribError || accountsError || schoolFeesError) {
+    console.error('[Finance] Failed to load:', contribError || accountsError || schoolFeesError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load the finance overview right now')}</div>
@@ -82,6 +83,13 @@ async function renderFinance() {
   (contrib || []).forEach((item) => {
     byType[item.contribution_type] = (byType[item.contribution_type] || 0) + Number(item.amount);
   });
+  const outstandingSchoolFees = (schoolFees || []).reduce((sum, fee) => sum + Math.max(0, Number(fee.total_fee) - Number(fee.paid_amount)), 0);
+  const studentsWithBalances = new Set(
+    (schoolFees || [])
+      .filter((fee) => Number(fee.total_fee) > Number(fee.paid_amount))
+      .map((fee) => fee.student_id)
+      .filter(Boolean)
+  ).size;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -98,6 +106,15 @@ async function renderFinance() {
         <div class="metric-card"><div class="metric-label">Emergency Fund</div>
           <div class="metric-value" style="color:var(--warning);">KES ${fmt(summary.emergency_fund_balance)}</div>
           <div class="metric-sub">Current reserve balance</div></div>
+      </div>
+
+      <div class="g2 mb16">
+        <div class="metric-card"><div class="metric-label">Outstanding School Fees</div>
+          <div class="metric-value" style="color:var(--danger);">KES ${fmt(outstandingSchoolFees)}</div>
+          <div class="metric-sub">Across all active fee records</div></div>
+        <div class="metric-card"><div class="metric-label">Students With Balance</div>
+          <div class="metric-value">${studentsWithBalances}</div>
+          <div class="metric-sub">Need follow-up on school fees</div></div>
       </div>
 
       <div class="g2 mb16">

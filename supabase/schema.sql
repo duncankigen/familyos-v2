@@ -12,6 +12,7 @@
 
 -- Enable UUID extension
 create extension if not exists "uuid-ossp";
+create extension if not exists pgcrypto;
 
 -- ============================================================
 -- STEP 1: CORE IDENTITY TABLES
@@ -225,7 +226,8 @@ create table if not exists students (
   school text not null,
   admission_number text,
   year_of_study text,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 create table if not exists school_fees (
@@ -238,8 +240,28 @@ create table if not exists school_fees (
   paid_amount numeric not null default 0 check (paid_amount >= 0),
   due_date date,
   notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists school_fee_payments (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid references families(id) on delete cascade,
+  school_fee_id uuid not null references school_fees(id) on delete cascade,
+  amount numeric not null check (amount > 0),
+  payment_date date not null default current_date,
+  reference text,
+  notes text,
+  payment_account_id uuid references payment_accounts(id) on delete set null,
+  recorded_by uuid references users(id) on delete set null,
   created_at timestamptz default now()
 );
+
+create index if not exists school_fee_payments_family_date_idx
+on school_fee_payments(family_id, payment_date desc, created_at desc);
+
+create index if not exists school_fee_payments_fee_idx
+on school_fee_payments(school_fee_id, payment_date desc, created_at desc);
 
 -- ============================================================
 -- STEP 5: EMERGENCY FUND
@@ -599,6 +621,7 @@ alter table expenses enable row level security;
 alter table payment_accounts enable row level security;
 alter table students enable row level security;
 alter table school_fees enable row level security;
+alter table school_fee_payments enable row level security;
 alter table emergency_fund enable row level security;
 alter table emergency_disbursements enable row level security;
 alter table projects enable row level security;
@@ -1093,7 +1116,35 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage school fees"
 on school_fees for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (
+  family_id = get_my_family_id()
+  and get_my_role() in ('admin','treasurer')
+  and student_id in (
+    select id from students where family_id = get_my_family_id()
+  )
+);
+
+create policy "family reads school fee payments"
+on school_fee_payments for select
+using (family_id = get_my_family_id());
+
+create policy "authorized manage school fee payments"
+on school_fee_payments for all
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (
+  family_id = get_my_family_id()
+  and get_my_role() in ('admin','treasurer')
+  and school_fee_id in (
+    select id from school_fees where family_id = get_my_family_id()
+  )
+  and (
+    payment_account_id is null
+    or payment_account_id in (
+      select id from payment_accounts where family_id = get_my_family_id()
+    )
+  )
+);
 
 -- EMERGENCY FUND
 create policy "family reads emergency fund"
@@ -1366,6 +1417,49 @@ as $$
   and deadline < current_date;
 $$;
 
+create or replace function sync_school_fee_paid_amount()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.school_fees
+    set paid_amount = coalesce(paid_amount, 0) + coalesce(new.amount, 0),
+        updated_at = now()
+    where id = new.school_fee_id;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if old.school_fee_id = new.school_fee_id then
+      update public.school_fees
+      set paid_amount = greatest(0, coalesce(paid_amount, 0) - coalesce(old.amount, 0) + coalesce(new.amount, 0)),
+          updated_at = now()
+      where id = new.school_fee_id;
+    else
+      update public.school_fees
+      set paid_amount = greatest(0, coalesce(paid_amount, 0) - coalesce(old.amount, 0)),
+          updated_at = now()
+      where id = old.school_fee_id;
+
+      update public.school_fees
+      set paid_amount = coalesce(paid_amount, 0) + coalesce(new.amount, 0),
+          updated_at = now()
+      where id = new.school_fee_id;
+    end if;
+    return new;
+  end if;
+
+  update public.school_fees
+  set paid_amount = greatest(0, coalesce(paid_amount, 0) - coalesce(old.amount, 0)),
+      updated_at = now()
+  where id = old.school_fee_id;
+  return old;
+end;
+$$;
+
 -- ============================================================
 -- STEP 21: TRIGGERS
 -- ============================================================
@@ -1429,11 +1523,19 @@ create trigger log_contributions after insert on contributions
 create trigger log_expenses after insert on expenses
   for each row execute procedure log_activity();
 
+create trigger log_school_fee_payments after insert on school_fee_payments
+  for each row execute procedure log_activity();
+
 create trigger log_tasks after insert on tasks
   for each row execute procedure log_activity();
 
 create trigger log_projects after insert on projects
   for each row execute procedure log_activity();
+
+drop trigger if exists school_fee_payment_totals on school_fee_payments;
+create trigger school_fee_payment_totals
+  after insert or update or delete on school_fee_payments
+  for each row execute procedure sync_school_fee_paid_amount();
 
 -- ============================================================
 -- STEP 22: SEED DEFAULT SKILLS DATA
