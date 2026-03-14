@@ -399,6 +399,35 @@ create table if not exists livestock_events (
   constraint lse_type_check check (event_type in ('birth','vaccination','sale','death','breeding','treatment','other'))
 );
 
+create table if not exists farm_outputs (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  crop_id uuid references farm_crops(id) on delete set null,
+  livestock_id uuid references livestock(id) on delete set null,
+  output_category text not null default 'other',
+  quantity numeric not null check (quantity > 0),
+  unit text not null default 'units',
+  output_date date not null default current_date,
+  usage_type text not null default 'other',
+  unit_price numeric check (unit_price is null or unit_price >= 0),
+  total_value numeric check (total_value is null or total_value >= 0),
+  destination text,
+  notes text,
+  recorded_by uuid references users(id) on delete set null,
+  created_at timestamptz default now(),
+  constraint farm_output_category_check check (output_category in ('harvest','milk','eggs','honey','meat','animal_sale','other')),
+  constraint farm_output_usage_check check (usage_type in ('sold','stored','consumed','distributed','seed','other'))
+);
+
+create index if not exists farm_outputs_project_date_idx
+on farm_outputs(project_id, output_date desc, created_at desc);
+
+create index if not exists farm_outputs_crop_idx
+on farm_outputs(crop_id);
+
+create index if not exists farm_outputs_livestock_idx
+on farm_outputs(livestock_id);
+
 -- ============================================================
 -- STEP 8: TASKS
 -- ============================================================
@@ -640,6 +669,7 @@ alter table project_activities enable row level security;
 alter table farm_inputs enable row level security;
 alter table livestock enable row level security;
 alter table livestock_events enable row level security;
+alter table farm_outputs enable row level security;
 alter table tasks enable row level security;
 alter table vendors enable row level security;
 alter table assets enable row level security;
@@ -1254,6 +1284,21 @@ using (livestock_id in (
   where p.family_id = get_my_family_id()
 ) and get_my_role() in ('admin','project_manager'));
 
+create policy "family reads farm outputs"
+on farm_outputs for select
+using (project_id in (select id from projects where family_id = get_my_family_id()));
+
+create policy "authorized manage farm outputs"
+on farm_outputs for all
+using (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+)
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+);
+
 -- TASKS: all family members can read; assigned user can update own tasks
 create policy "family reads tasks"
 on tasks for select
@@ -1539,6 +1584,9 @@ create trigger log_tasks after insert on tasks
   for each row execute procedure log_activity();
 
 create trigger log_projects after insert on projects
+  for each row execute procedure log_activity();
+
+create trigger log_farm_outputs after insert on farm_outputs
   for each row execute procedure log_activity();
 
 drop trigger if exists school_fee_payment_totals on school_fee_payments;

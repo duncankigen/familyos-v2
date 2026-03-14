@@ -8,6 +8,9 @@ const FarmingPage = {
   projects: [],
   projectsById: {},
   membersById: {},
+  crops: [],
+  livestock: [],
+  outputs: [],
   storageKey: 'fos_farming_project',
 };
 
@@ -38,6 +41,41 @@ function clearActiveFarmingProject() {
 
 function farmingProjectName(projectId) {
   return FarmingPage.projectsById[projectId]?.name || '-';
+}
+
+function farmingCropName(cropId) {
+  return FarmingPage.crops.find((crop) => crop.id === cropId)?.crop_name || 'Crop output';
+}
+
+function farmingLivestockName(livestockId) {
+  const item = FarmingPage.livestock.find((row) => row.id === livestockId);
+  if (!item) return 'Livestock output';
+  return item.breed ? `${item.animal_type} - ${item.breed}` : item.animal_type;
+}
+
+function farmingOutputCategoryLabel(value) {
+  return String(value || 'output')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function farmingUsageBadge(value) {
+  const map = {
+    sold: 'b-green',
+    stored: 'b-blue',
+    consumed: 'b-amber',
+    distributed: 'b-purple',
+    seed: 'b-gray',
+    other: 'b-gray',
+  };
+
+  return `<span class="badge ${map[value] || 'b-gray'}">${farmingOutputCategoryLabel(value)}</span>`;
+}
+
+function farmingOutputSourceName(output) {
+  if (output.crop_id) return farmingCropName(output.crop_id);
+  if (output.livestock_id) return farmingLivestockName(output.livestock_id);
+  return `${farmingProjectName(output.project_id)} (general)`;
 }
 
 async function getFarmingProjects() {
@@ -144,12 +182,63 @@ function showAllFarmProjects() {
   renderPage('farming');
 }
 
+function farmingOutputSourceOptions(projectId, sourceType) {
+  if (!projectId || sourceType === 'general') return [];
+  if (sourceType === 'crop') {
+    return FarmingPage.crops
+      .filter((crop) => crop.project_id === projectId)
+      .map((crop) => ({ id: crop.id, label: crop.crop_name }));
+  }
+
+  return FarmingPage.livestock
+    .filter((item) => item.project_id === projectId)
+    .map((item) => ({ id: item.id, label: item.breed ? `${item.animal_type} - ${item.breed}` : item.animal_type }));
+}
+
+function farmingOutputSourceFieldMarkup(projectId, sourceType, selectedId = '') {
+  if (sourceType === 'general') {
+    return `
+      <div class="form-group">
+        <label class="form-label">Source</label>
+        <input class="form-input" value="General project output" disabled />
+      </div>`;
+  }
+
+  const options = farmingOutputSourceOptions(projectId, sourceType);
+  const label = sourceType === 'crop' ? 'Crop' : 'Livestock';
+  if (!options.length) {
+    return `
+      <div class="form-group">
+        <label class="form-label">${label}</label>
+        <input class="form-input" value="No ${label.toLowerCase()} records yet for this project" disabled />
+      </div>`;
+  }
+
+  return `
+    <div class="form-group">
+      <label class="form-label">${label}</label>
+      <select id="farm-output-source-id" class="form-select">
+        <option value="">- Select -</option>
+        ${options.map((option) => `<option value="${option.id}" ${option.id === selectedId ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+function refreshFarmOutputSourceField() {
+  const container = document.getElementById('farm-output-source-field');
+  if (!container) return;
+  const projectId = document.getElementById('farm-project-id')?.value || '';
+  const sourceType = document.getElementById('farm-output-source-type')?.value || 'general';
+  container.innerHTML = farmingOutputSourceFieldMarkup(projectId, sourceType);
+}
+
 async function renderFarming() {
   const actions = [];
   if (canManageFarmingRecords()) {
     actions.push(`<button class="btn btn-sm" onclick="openAddCrop()">+ Crop</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddLivestock()">+ Livestock</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddInput()">+ Input</button>`);
+    actions.push(`<button class="btn btn-sm" onclick="openAddOutput()">+ Output</button>`);
   }
   if (canLogFarmingActivity()) {
     actions.push(`<button class="btn btn-primary btn-sm" onclick="openAddActivity()">+ Activity</button>`);
@@ -196,16 +285,20 @@ async function renderFarming() {
   const livestockQuery = projectIds.length
     ? sb.from('livestock').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
     : Promise.resolve({ data: [], error: null });
+  const outputQuery = projectIds.length
+    ? sb.from('farm_outputs').select('*').in('project_id', projectIds).order('output_date', { ascending: false }).limit(20)
+    : Promise.resolve({ data: [], error: null });
 
   const [
     { data: crops, error: cropError },
     { data: activities, error: activityError },
     { data: inputs, error: inputError },
     { data: livestock, error: livestockError },
-  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery]);
+    { data: outputs, error: outputError },
+  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery, outputQuery]);
 
-  if (cropError || activityError || inputError || livestockError) {
-    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError);
+  if (cropError || activityError || inputError || livestockError || outputError) {
+    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError || outputError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load farm records right now')}</div>
@@ -218,6 +311,21 @@ async function renderFarming() {
   const farmActivities = activities || [];
   const farmInputs = inputs || [];
   const farmLivestock = livestock || [];
+  const farmOutputs = outputs || [];
+
+  FarmingPage.crops = farmCrops;
+  FarmingPage.livestock = farmLivestock;
+  FarmingPage.outputs = farmOutputs;
+
+  const now = new Date();
+  const thisMonthOutputs = farmOutputs.filter((item) => {
+    const date = new Date(item.output_date || item.created_at);
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+  });
+  const soldValue = farmOutputs
+    .filter((item) => item.usage_type === 'sold')
+    .reduce((sum, item) => sum + Number(item.total_value || 0), 0);
+  const nonsoldCount = farmOutputs.filter((item) => item.usage_type && item.usage_type !== 'sold').length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -232,6 +340,17 @@ async function renderFarming() {
           <div class="metric-value" style="color:var(--warning);">${farmLivestock.reduce((sum, item) => sum + Number(item.count || 0), 0)}</div></div>
         <div class="metric-card"><div class="metric-label">Activities</div>
           <div class="metric-value">${farmActivities.length}</div></div>
+      </div>
+
+      <div class="g4 mb16">
+        <div class="metric-card"><div class="metric-label">Output Records</div>
+          <div class="metric-value">${farmOutputs.length}</div></div>
+        <div class="metric-card"><div class="metric-label">This Month</div>
+          <div class="metric-value" style="color:var(--accent);">${thisMonthOutputs.length}</div></div>
+        <div class="metric-card"><div class="metric-label">Sold Value</div>
+          <div class="metric-value" style="color:var(--success);">KES ${fmt(soldValue)}</div></div>
+        <div class="metric-card"><div class="metric-label">Stored / Used</div>
+          <div class="metric-value">${nonsoldCount}</div></div>
       </div>
 
       ${!FarmingPage.projects.length ? `
@@ -330,6 +449,34 @@ async function renderFarming() {
           ${!farmInputs.length ? empty('No inputs recorded') : ''}
           ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddInput()">+ Add Input</button>` : ''}
         </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Outputs & Yield</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Output</th><th>Source</th><th>Qty</th><th>Use</th><th>Date</th><th>Value</th></tr></thead>
+            <tbody>
+              ${farmOutputs.map((output) => `
+                <tr>
+                  <td>
+                    <div style="font-weight:600;">${escapeHtml(farmingOutputCategoryLabel(output.output_category))}</div>
+                    ${output.destination ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(output.destination)}</div>` : ''}
+                  </td>
+                  <td style="font-size:12px;">
+                    ${escapeHtml(farmingOutputSourceName(output))}
+                    <div style="font-size:11px;color:var(--text3);">${escapeHtml(farmingProjectName(output.project_id))}</div>
+                  </td>
+                  <td style="font-size:12px;">${fmt(output.quantity || 0)} ${escapeHtml(output.unit || '')}</td>
+                  <td>${farmingUsageBadge(output.usage_type)}</td>
+                  <td style="font-size:12px;color:var(--text3);">${output.output_date ? fmtDate(output.output_date) : '-'}</td>
+                  <td>${output.total_value ? `KES ${fmt(output.total_value)}` : '-'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${!farmOutputs.length ? empty('No farm outputs recorded yet') : ''}
+        ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddOutput()">+ Record Output</button>` : ''}
       </div>
     </div>`;
 }
@@ -574,6 +721,138 @@ async function openAddLivestock() {
     Modal.close();
     renderPage('farming');
   }}]);
+}
+
+async function openAddOutput() {
+  if (!canManageFarmingRecords()) return;
+
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+  const selectedProjectId = getActiveFarmingProject();
+
+  Modal.open('Record Farm Output', `
+    <div class="form-row">
+      <div class="form-group">${farmingProjectFieldMarkup(projects, selectedProjectId, Boolean(selectedProjectId))}</div>
+      <div class="form-group">
+        <label class="form-label">Source Type</label>
+        <select id="farm-output-source-type" class="form-select" onchange="refreshFarmOutputSourceField()">
+          <option value="general">General</option>
+          <option value="crop">Crop</option>
+          <option value="livestock">Livestock</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="farm-output-source-field">
+      ${farmingOutputSourceFieldMarkup(selectedProjectId, 'general')}
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Output Category</label>
+        <select id="farm-output-category" class="form-select">
+          <option value="harvest">Harvest</option>
+          <option value="milk">Milk</option>
+          <option value="eggs">Eggs</option>
+          <option value="honey">Honey</option>
+          <option value="meat">Meat</option>
+          <option value="animal_sale">Animal Sale</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Usage</label>
+        <select id="farm-output-usage" class="form-select">
+          <option value="sold">Sold</option>
+          <option value="stored">Stored</option>
+          <option value="consumed">Consumed</option>
+          <option value="distributed">Distributed</option>
+          <option value="seed">Seed</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Quantity</label>
+        <input id="farm-output-qty" class="form-input" type="number" placeholder="35" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unit</label>
+        <input id="farm-output-unit" class="form-input" placeholder="litres, trays, bags, kg" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Output Date</label>
+        <input id="farm-output-date" class="form-input" type="date" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unit Price (KES)</label>
+        <input id="farm-output-price" class="form-input" type="number" placeholder="Optional" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Destination</label>
+        <input id="farm-output-destination" class="form-input" placeholder="Market, home use, buyer, school..." />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <input id="farm-output-notes" class="form-input" placeholder="Optional notes" />
+      </div>
+    </div>
+    <p id="farm-output-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
+    hideErr('farm-output-err');
+    const projectId = document.getElementById('farm-project-id')?.value || '';
+    const sourceType = document.getElementById('farm-output-source-type')?.value || 'general';
+    const sourceId = document.getElementById('farm-output-source-id')?.value || '';
+    const quantity = parseFloat(document.getElementById('farm-output-qty')?.value || '');
+    const unitPrice = parseFloat(document.getElementById('farm-output-price')?.value || '');
+
+    if (!projectId) {
+      showErr('farm-output-err', 'Select a farming project.');
+      return;
+    }
+    if (!quantity || quantity <= 0) {
+      showErr('farm-output-err', 'Enter a valid quantity.');
+      return;
+    }
+    if (!document.getElementById('farm-output-unit')?.value.trim()) {
+      showErr('farm-output-err', 'Unit is required.');
+      return;
+    }
+    if ((sourceType === 'crop' || sourceType === 'livestock') && !sourceId) {
+      showErr('farm-output-err', `Select a ${sourceType}.`);
+      return;
+    }
+
+    const payload = {
+      project_id: projectId,
+      crop_id: sourceType === 'crop' ? sourceId : null,
+      livestock_id: sourceType === 'livestock' ? sourceId : null,
+      output_category: document.getElementById('farm-output-category')?.value || 'other',
+      quantity,
+      unit: document.getElementById('farm-output-unit')?.value.trim() || 'units',
+      output_date: document.getElementById('farm-output-date')?.value || null,
+      usage_type: document.getElementById('farm-output-usage')?.value || 'other',
+      unit_price: Number.isFinite(unitPrice) ? unitPrice : null,
+      total_value: Number.isFinite(unitPrice) ? unitPrice * quantity : null,
+      destination: document.getElementById('farm-output-destination')?.value.trim() || null,
+      notes: document.getElementById('farm-output-notes')?.value.trim() || null,
+      recorded_by: State.uid,
+    };
+
+    const { error } = await DB.client.from('farm_outputs').insert(payload);
+    if (error) {
+      showErr('farm-output-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('farming');
+  }}]);
+
+  refreshFarmOutputSourceField();
 }
 
 Router.register('farming', renderFarming);
