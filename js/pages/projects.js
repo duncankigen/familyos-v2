@@ -49,6 +49,16 @@ function openProjectCard(projectId) {
   nav('project-detail');
 }
 
+function openProjectFarming(projectId) {
+  rememberActiveProject(projectId);
+  if (typeof setActiveFarmingProject === 'function') {
+    setActiveFarmingProject(projectId);
+  } else {
+    localStorage.setItem('fos_farming_project', projectId);
+  }
+  nav('farming');
+}
+
 function backToProjects() {
   rememberActiveProject('');
   nav('projects');
@@ -219,7 +229,7 @@ async function renderProjectDetail() {
 
   setTopbar(project.name, `
     <button class="btn btn-sm" onclick="backToProjects()">Back to Projects</button>
-    ${project.project_type === 'farming' ? `<button class="btn btn-primary btn-sm" onclick="nav('farming')">Open Farm Manager</button>` : ''}
+    ${project.project_type === 'farming' ? `<button class="btn btn-primary btn-sm" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
   `);
   document.querySelectorAll('.sb-item').forEach((item) => {
     item.classList.toggle('active', item.dataset.page === 'projects');
@@ -330,7 +340,7 @@ async function renderProjectDetail() {
               </div>
             </div>`).join('')}
           ${!(activities || []).length ? empty('No activity logged for this project yet') : ''}
-          ${project.project_type === 'farming' ? `<button class="btn btn-sm" style="margin-top:8px;" onclick="nav('farming')">Open Farm Manager</button>` : ''}
+          ${project.project_type === 'farming' ? `<button class="btn btn-sm" style="margin-top:8px;" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
         </div>
       </div>
     </div>`;

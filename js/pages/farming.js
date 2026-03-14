@@ -8,6 +8,7 @@ const FarmingPage = {
   projects: [],
   projectsById: {},
   membersById: {},
+  storageKey: 'fos_farming_project',
 };
 
 function canManageFarmingRecords() {
@@ -18,6 +19,23 @@ function canLogFarmingActivity() {
   return Boolean(State.currentProfile?.family_id || State.fid);
 }
 
+function setActiveFarmingProject(projectId = '') {
+  if (!projectId) {
+    localStorage.removeItem(FarmingPage.storageKey);
+    return;
+  }
+
+  localStorage.setItem(FarmingPage.storageKey, projectId);
+}
+
+function getActiveFarmingProject() {
+  return localStorage.getItem(FarmingPage.storageKey) || '';
+}
+
+function clearActiveFarmingProject() {
+  setActiveFarmingProject('');
+}
+
 function farmingProjectName(projectId) {
   return FarmingPage.projectsById[projectId]?.name || '-';
 }
@@ -25,7 +43,7 @@ function farmingProjectName(projectId) {
 async function getFarmingProjects() {
   const { data, error } = await DB.client
     .from('projects')
-    .select('id,name')
+    .select('id,name,status,description,project_type,budget,start_date,end_date,created_by,created_at')
     .eq('family_id', State.fid)
     .eq('project_type', 'farming')
     .order('name');
@@ -36,6 +54,29 @@ async function getFarmingProjects() {
   }
 
   return data || [];
+}
+
+function activeFarmingProject() {
+  const activeId = getActiveFarmingProject();
+  if (!activeId) return null;
+  return FarmingPage.projects.find((project) => project.id === activeId) || null;
+}
+
+function farmingProjectFieldMarkup(projects, selectedId = '', lockToActive = false) {
+  if (lockToActive && selectedId) {
+    const project = projects.find((item) => item.id === selectedId);
+    return `
+      <label class="form-label">Farm Project</label>
+      <input class="form-input" value="${escapeHtml(project?.name || 'Selected project')}" disabled />
+      <input id="farm-project-id" type="hidden" value="${selectedId}" />`;
+  }
+
+  return `
+    <label class="form-label">Farm Project</label>
+    <select id="farm-project-id" class="form-select">
+      <option value="">- Select -</option>
+      ${projects.map((project) => `<option value="${project.id}" ${project.id === selectedId ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}
+    </select>`;
 }
 
 async function ensureFarmingProjects() {
@@ -50,11 +91,65 @@ async function ensureFarmingProjects() {
   return null;
 }
 
+function farmingContextCard(project) {
+  if (!project) {
+    return `
+      <div class="card mb16">
+        <div class="flex-between" style="gap:12px;align-items:flex-start;">
+          <div>
+            <div class="card-title">Farm Scope</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+              Tracking all farming projects in one place. Open a farming project from Projects if you want a focused view.
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="card mb16">
+      <div class="flex-between" style="gap:12px;align-items:flex-start;">
+        <div>
+          <div class="card-title">${escapeHtml(project.name)}</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+            Focused farm operations view for this project.
+          </div>
+          ${project.description ? `<div style="font-size:12px;color:var(--text3);margin-top:6px;">${escapeHtml(project.description)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+          <button class="btn btn-sm" onclick="backToProjectFromFarming()">Back to Project</button>
+          <button class="btn btn-sm" onclick="showAllFarmProjects()">Show All</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function backToProjectFromFarming() {
+  const project = activeFarmingProject();
+  if (!project) {
+    nav('projects');
+    return;
+  }
+
+  if (typeof rememberActiveProject === 'function') {
+    rememberActiveProject(project.id);
+  } else {
+    localStorage.setItem('fos_project_detail', project.id);
+  }
+  nav('project-detail');
+}
+
+function showAllFarmProjects() {
+  clearActiveFarmingProject();
+  renderPage('farming');
+}
+
 async function renderFarming() {
   const actions = [];
   if (canManageFarmingRecords()) {
     actions.push(`<button class="btn btn-sm" onclick="openAddCrop()">+ Crop</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddLivestock()">+ Livestock</button>`);
+    actions.push(`<button class="btn btn-sm" onclick="openAddInput()">+ Input</button>`);
   }
   if (canLogFarmingActivity()) {
     actions.push(`<button class="btn btn-primary btn-sm" onclick="openAddActivity()">+ Activity</button>`);
@@ -63,7 +158,7 @@ async function renderFarming() {
 
   const sb = DB.client;
   const [{ data: projects, error: projectError }, { data: members, error: memberError }] = await Promise.all([
-    sb.from('projects').select('id,name,status').eq('family_id', State.fid).eq('project_type', 'farming').order('created_at', { ascending: false }),
+    sb.from('projects').select('id,name,status,description,project_type,budget,start_date,end_date,created_by,created_at').eq('family_id', State.fid).eq('project_type', 'farming').order('created_at', { ascending: false }),
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
   ]);
 
@@ -80,7 +175,15 @@ async function renderFarming() {
   FarmingPage.projectsById = Object.fromEntries(FarmingPage.projects.map((project) => [project.id, project]));
   FarmingPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
 
-  const projectIds = FarmingPage.projects.map((project) => project.id);
+  const activeId = getActiveFarmingProject();
+  if (activeId && !FarmingPage.projectsById[activeId]) {
+    clearActiveFarmingProject();
+  }
+
+  const scopedProject = activeFarmingProject();
+  const visibleProjects = scopedProject ? [scopedProject] : FarmingPage.projects;
+  const projectIds = visibleProjects.map((project) => project.id);
+
   const cropQuery = projectIds.length
     ? sb.from('farm_crops').select('*').in('project_id', projectIds).order('planting_date', { ascending: false })
     : Promise.resolve({ data: [], error: null });
@@ -110,7 +213,7 @@ async function renderFarming() {
     return;
   }
 
-  const farmProjects = FarmingPage.projects;
+  const farmProjects = visibleProjects;
   const farmCrops = crops || [];
   const farmActivities = activities || [];
   const farmInputs = inputs || [];
@@ -118,6 +221,8 @@ async function renderFarming() {
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      ${farmingContextCard(scopedProject)}
+
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Farm Projects</div>
           <div class="metric-value">${farmProjects.length}</div></div>
@@ -129,7 +234,7 @@ async function renderFarming() {
           <div class="metric-value">${farmActivities.length}</div></div>
       </div>
 
-      ${!farmProjects.length ? `
+      ${!FarmingPage.projects.length ? `
         <div class="card mb16">
           ${empty('No farming projects yet - create one from Projects to start tracking operations')}
         </div>` : ''}
@@ -234,14 +339,13 @@ async function openAddCrop() {
 
   const projects = await ensureFarmingProjects();
   if (!projects) return;
-  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+  const selectedProjectId = getActiveFarmingProject();
 
   Modal.open('Add Crop', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Crop Name</label>
         <input id="cr-name" class="form-input" placeholder="Maize"/></div>
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="cr-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
+      <div class="form-group">${farmingProjectFieldMarkup(projects, selectedProjectId, Boolean(selectedProjectId))}</div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Area (acres)</label>
@@ -269,7 +373,7 @@ async function openAddCrop() {
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
     hideErr('crop-err');
     const cropName = document.getElementById('cr-name')?.value.trim() || '';
-    const projectId = document.getElementById('cr-proj')?.value || '';
+    const projectId = document.getElementById('farm-project-id')?.value || '';
 
     if (!cropName) {
       showErr('crop-err', 'Crop name is required.');
@@ -306,7 +410,7 @@ async function openAddActivity() {
 
   const projects = await ensureFarmingProjects();
   if (!projects) return;
-  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+  const selectedProjectId = getActiveFarmingProject();
 
   Modal.open('Log Farm Activity', `
     <div class="form-row">
@@ -324,8 +428,7 @@ async function openAddActivity() {
         <input id="act-date" class="form-input" type="date"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="act-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
+      <div class="form-group">${farmingProjectFieldMarkup(projects, selectedProjectId, Boolean(selectedProjectId))}</div>
       <div class="form-group"><label class="form-label">Cost (KES)</label>
         <input id="act-cost" class="form-input" type="number" placeholder="0"/></div>
     </div>
@@ -334,7 +437,7 @@ async function openAddActivity() {
     <p id="activity-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Log', cls: 'btn-primary', fn: async () => {
     hideErr('activity-err');
-    const projectId = document.getElementById('act-proj')?.value || '';
+    const projectId = document.getElementById('farm-project-id')?.value || '';
 
     if (!projectId) {
       showErr('activity-err', 'Select a farming project.');
@@ -365,14 +468,13 @@ async function openAddInput() {
 
   const projects = await ensureFarmingProjects();
   if (!projects) return;
-  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+  const selectedProjectId = getActiveFarmingProject();
 
   Modal.open('Record Farm Input', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Input Name</label>
         <input id="in-name" class="form-input" placeholder="DAP Fertilizer"/></div>
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="in-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
+      <div class="form-group">${farmingProjectFieldMarkup(projects, selectedProjectId, Boolean(selectedProjectId))}</div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Quantity</label>
@@ -390,7 +492,7 @@ async function openAddInput() {
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
     hideErr('input-err');
     const name = document.getElementById('in-name')?.value.trim() || '';
-    const projectId = document.getElementById('in-proj')?.value || '';
+    const projectId = document.getElementById('farm-project-id')?.value || '';
 
     if (!name) {
       showErr('input-err', 'Input name is required.');
@@ -425,7 +527,7 @@ async function openAddLivestock() {
 
   const projects = await ensureFarmingProjects();
   if (!projects) return;
-  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+  const selectedProjectId = getActiveFarmingProject();
 
   Modal.open('Add Livestock', `
     <div class="form-row">
@@ -437,8 +539,7 @@ async function openAddLivestock() {
     <div class="form-row">
       <div class="form-group"><label class="form-label">Quantity</label>
         <input id="ls-qty" class="form-input" type="number" placeholder="10"/></div>
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="ls-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
+      <div class="form-group">${farmingProjectFieldMarkup(projects, selectedProjectId, Boolean(selectedProjectId))}</div>
     </div>
     <div class="form-group"><label class="form-label">Notes</label>
       <textarea id="ls-notes" class="form-textarea" placeholder="Health status, ear tags, or feed notes"></textarea></div>
@@ -446,7 +547,7 @@ async function openAddLivestock() {
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
     hideErr('livestock-err');
     const animalType = document.getElementById('ls-type')?.value.trim() || '';
-    const projectId = document.getElementById('ls-proj')?.value || '';
+    const projectId = document.getElementById('farm-project-id')?.value || '';
 
     if (!animalType) {
       showErr('livestock-err', 'Livestock type is required.');
