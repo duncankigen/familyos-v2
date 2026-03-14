@@ -41,7 +41,7 @@ async function renderReports() {
     sb.from('meetings').select('id,status').eq('family_id', fid),
     sb.from('family_goals').select('id,status').eq('family_id', fid),
     sb.from('documents').select('id,access_level').eq('family_id', fid),
-    sb.from('ai_insights').select('id,is_read').eq('family_id', fid),
+    sb.from('ai_insights').select('id,is_read,expires_at').eq('family_id', fid),
   ]);
 
   // Build 12-month rolling data
@@ -93,7 +93,7 @@ async function renderReports() {
   const farmCost = farmInputCost + farmActivityCost;
   const scheduledMeetings = (meetings || []).filter((meeting) => meeting.status === 'scheduled').length;
   const activeGoals = (goals || []).filter((goal) => goal.status === 'active').length;
-  const unreadInsights = (insights || []).filter((insight) => !insight.is_read).length;
+  const unreadInsights = (insights || []).filter((insight) => !insight.is_read && (!insight.expires_at || new Date(insight.expires_at) > now)).length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">

@@ -110,6 +110,7 @@ async function renderDashboard() {
   const now = new Date();
   const overdue = (tasks || []).filter((task) => task.deadline && new Date(task.deadline) < now).length;
   const announcementFeed = await attachDashboardAnnouncementAuthors(announcements || []);
+  const activeInsights = (insights || []).filter((insight) => !insight.expires_at || new Date(insight.expires_at) > now);
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -193,14 +194,14 @@ async function renderDashboard() {
 
         <div class="card">
           <div class="card-title">AI Insights</div>
-          ${(insights || []).map((insight) => `
+          ${activeInsights.map((insight) => `
             <div class="ai-card ai-${insight.severity === 'warning' ? 'amber' : insight.severity === 'alert' ? 'red' : insight.severity === 'success' ? 'green' : 'blue'}">
               <div class="ai-tag" style="color:var(--${insight.severity === 'warning' ? 'warning' : insight.severity === 'alert' ? 'danger' : insight.severity === 'success' ? 'success' : 'accent'});">
                 ${insight.title}
               </div>
               <div class="ai-msg">${insight.message}</div>
             </div>`).join('')}
-          ${!(insights || []).length
+          ${!activeInsights.length
             ? `<div class="ai-card ai-blue">
                 <div class="ai-tag" style="color:var(--accent)">AI Advisor</div>
                 <div class="ai-msg">Visit the AI Advisor page to generate insights for your family.</div>
