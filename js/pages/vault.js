@@ -83,6 +83,12 @@ function documentLinkMeta(url) {
   }
 }
 
+function documentLinkText(url) {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  return value.length > 90 ? `${value.slice(0, 87)}...` : value;
+}
+
 function documentAccessBadge(accessLevel) {
   if (accessLevel === 'admins') return '<span class="badge b-red">Admins only</span>';
   if (accessLevel === 'all') return '<span class="badge b-blue">All access</span>';
@@ -241,7 +247,13 @@ async function renderVault() {
                             : ''}
                           ${doc.file_url ? (() => {
                             const meta = documentLinkMeta(doc.file_url);
-                            return `<div style="font-size:11px;color:var(--text3);">${escapeHtml(meta?.hostLabel || doc.file_url)}</div>`;
+                            return `
+                              <div style="font-size:11px;color:var(--text3);">${escapeHtml(meta?.hostLabel || doc.file_url)}</div>
+                              <div style="font-size:11px;word-break:break-all;">
+                                <a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">
+                                  ${escapeHtml(documentLinkText(doc.file_url))}
+                                </a>
+                              </div>`;
                           })() : ''}
                         </td>
                         <td>${documentAccessBadge(doc.access_level)}</td>
