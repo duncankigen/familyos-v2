@@ -79,6 +79,14 @@ function farmingOutputSourceName(output) {
   return `${farmingProjectName(output.project_id)} (general)`;
 }
 
+function normalizeLivestockCountChange(eventType, countChange) {
+  const amount = parseInt(countChange || '0', 10) || 0;
+  if (!amount) return 0;
+  if (eventType === 'birth') return Math.abs(amount);
+  if (eventType === 'sale' || eventType === 'death') return -Math.abs(amount);
+  return amount;
+}
+
 async function getFarmingProjects() {
   const { data, error } = await DB.client
     .from('projects')
@@ -336,6 +344,9 @@ async function renderFarming() {
   const soldValue = farmOutputs
     .filter((item) => item.usage_type === 'sold')
     .reduce((sum, item) => sum + Number(item.total_value || 0), 0);
+  const soldCount = farmOutputs.filter((item) => item.usage_type === 'sold').length;
+  const storedCount = farmOutputs.filter((item) => item.usage_type === 'stored').length;
+  const consumedCount = farmOutputs.filter((item) => item.usage_type === 'consumed').length;
   const farmCost = farmActivities.reduce((sum, item) => sum + Number(item.cost || 0), 0)
     + farmInputs.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.cost_per_unit || 0)), 0);
 
@@ -489,6 +500,12 @@ async function renderFarming() {
 
       <div class="card">
         <div class="card-title">Outputs & Yield</div>
+        <div class="tag-row" style="margin-bottom:10px;">
+          <span class="badge b-green">Sold ${fmt(soldCount)}</span>
+          <span class="badge b-blue">Stored ${fmt(storedCount)}</span>
+          <span class="badge b-amber">Consumed ${fmt(consumedCount)}</span>
+          ${scopedProject ? `<span class="badge b-gray">${escapeHtml(scopedProject.name)}</span>` : ''}
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Output</th><th>Source</th><th>Qty</th><th>Use</th><th>Date</th><th>Value</th></tr></thead>
@@ -922,11 +939,12 @@ async function openAddLivestockEvent() {
           `).join('')}
         </select></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Date</label>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Date</label>
         <input id="le-date" class="form-input" type="date" value="${new Date().toISOString().slice(0, 10)}"/></div>
       <div class="form-group"><label class="form-label">Count Change</label>
-        <input id="le-count" class="form-input" type="number" placeholder="Optional"/></div>
+        <input id="le-count" class="form-input" type="number" placeholder="Optional"/>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">Births add stock. Sales and deaths reduce stock.</div></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Cost (KES)</label>
@@ -952,7 +970,10 @@ async function openAddLivestockEvent() {
         description,
         event_date: document.getElementById('le-date')?.value || new Date().toISOString().slice(0, 10),
         cost: parseFloat(document.getElementById('le-cost')?.value || '') || 0,
-        count_change: parseInt(document.getElementById('le-count')?.value || '', 10) || 0,
+        count_change: normalizeLivestockCountChange(
+          document.getElementById('le-type')?.value || 'other',
+          document.getElementById('le-count')?.value || '0'
+        ),
       });
 
       if (error) {

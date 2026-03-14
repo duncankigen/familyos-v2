@@ -539,6 +539,7 @@ create table if not exists assets (
   family_id uuid references families(id) on delete cascade,
   name text not null,
   asset_type text not null,
+  status text not null default 'active',
   location text,
   estimated_value numeric,
   purchase_date date,
@@ -548,7 +549,8 @@ create table if not exists assets (
   attachment_url text,
   attachment_name text,
   created_at timestamptz default now(),
-  constraint asset_type_check check (asset_type in ('land','building','vehicle','tractor','livestock','equipment','investment','other'))
+  constraint asset_type_check check (asset_type in ('land','building','vehicle','tractor','livestock','equipment','investment','other')),
+  constraint asset_status_check check (status in ('active','inactive','archived'))
 );
 
 -- ============================================================

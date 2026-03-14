@@ -34,6 +34,16 @@ function taskAssigneeLabel(task) {
   return `Assigned: ${TasksPage.membersById[task.assigned_user]?.full_name || 'Member'}`;
 }
 
+function taskPriorityBadge(priority) {
+  const tone = {
+    urgent: 'b-red',
+    high: 'b-amber',
+    medium: 'b-blue',
+    low: 'b-gray',
+  }[priority || 'medium'] || 'b-gray';
+  return `<span class="badge ${tone}">${escapeHtml(String(priority || 'medium').replace('_', ' '))}</span>`;
+}
+
 function taskForm(task = null) {
   return `
     <div class="form-group"><label class="form-label">Task Title</label>
@@ -185,15 +195,16 @@ async function renderTasks() {
   setTopbar('Tasks', canCreateTasks() ? `<button class="btn btn-primary btn-sm" onclick="openAddTask()">+ Add Task</button>` : '');
   const sb = DB.client;
 
-  const [{ data: tasks, error: taskError }, { data: members, error: memberError }, { data: projects, error: projectError }, { data: vendors, error: vendorError }] = await Promise.all([
+  const [{ data: tasks, error: taskError }, { data: members, error: memberError }, { data: projects, error: projectError }, { data: vendors, error: vendorError }, { data: comments, error: commentError }] = await Promise.all([
     sb.from('tasks').select('id,family_id,project_id,title,description,assigned_user,assigned_vendor,status,priority,deadline,completed_at,created_by,created_at').eq('family_id', State.fid).order('deadline'),
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
     sb.from('projects').select('id,name').eq('family_id', State.fid),
     sb.from('vendors').select('id,name').eq('family_id', State.fid),
+    sb.from('task_comments').select('task_id').eq('family_id', State.fid),
   ]);
 
-  if (taskError || memberError || projectError || vendorError) {
-    console.error('[Tasks] Failed to load:', taskError || memberError || projectError || vendorError);
+  if (taskError || memberError || projectError || vendorError || commentError) {
+    console.error('[Tasks] Failed to load:', taskError || memberError || projectError || vendorError || commentError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load tasks right now')}</div>
@@ -206,6 +217,10 @@ async function renderTasks() {
   TasksPage.projectsById = Object.fromEntries((projects || []).map((project) => [project.id, project]));
   TasksPage.vendors = vendors || [];
   TasksPage.vendorsById = Object.fromEntries(TasksPage.vendors.map((vendor) => [vendor.id, vendor]));
+  const commentCountByTask = {};
+  (comments || []).forEach((comment) => {
+    commentCountByTask[comment.task_id] = (commentCountByTask[comment.task_id] || 0) + 1;
+  });
 
   const cols = [
     { key: 'pending', label: 'Pending', color: 'var(--warning)' },
@@ -245,7 +260,10 @@ async function renderTasks() {
                 const isOverdue = task.deadline && new Date(task.deadline) < now && task.status !== 'completed';
                 return `
                   <div class="card" style="border-left:3px solid ${isOverdue ? 'var(--danger)' : col.color};">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escapeHtml(task.title)}</div>
+                    <div class="flex-between" style="gap:8px;align-items:flex-start;margin-bottom:6px;">
+                      <div style="font-size:13px;font-weight:600;min-width:0;">${escapeHtml(task.title)}</div>
+                      ${taskPriorityBadge(task.priority)}
+                    </div>
                     <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">
                       ${escapeHtml(taskAssigneeLabel(task))}
                       ${TasksPage.projectsById[task.project_id]?.name ? ` | Project: ${escapeHtml(TasksPage.projectsById[task.project_id].name)}` : ''}
@@ -258,6 +276,7 @@ async function renderTasks() {
                       </div>` : ''}
                     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
                       ${statusBadge(task.status)}
+                      ${commentCountByTask[task.id] ? `<span class="badge b-gray">${commentCountByTask[task.id]} comment${commentCountByTask[task.id] === 1 ? '' : 's'}</span>` : ''}
                       ${canUpdateTask(task) && col.key !== 'in_progress' && col.key !== 'completed' ? `
                         <button class="btn btn-sm" onclick="updateTaskStatus('${task.id}','in_progress')">Start</button>` : ''}
                       ${canUpdateTask(task) && col.key !== 'completed' ? `

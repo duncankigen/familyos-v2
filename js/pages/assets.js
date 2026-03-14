@@ -35,6 +35,15 @@ function assetAttachmentMarkup(asset) {
     </div>`;
 }
 
+function assetStatusBadge(status) {
+  const tone = {
+    active: 'b-green',
+    inactive: 'b-amber',
+    archived: 'b-gray',
+  }[status || 'active'] || 'b-gray';
+  return `<span class="badge ${tone}">${escapeHtml(status || 'active')}</span>`;
+}
+
 function assetForm(asset = null) {
   return `
     <div class="form-group"><label class="form-label">Asset Name</label>
@@ -63,9 +72,15 @@ function assetForm(asset = null) {
             <option value="${member.id}" ${asset?.manager_id === member.id ? 'selected' : ''}>${escapeHtml(member.full_name)}</option>
           `).join('')}
         </select></div>
-      <div class="form-group"><label class="form-label">Purchase Date</label>
-        <input id="a-date" class="form-input" type="date" value="${asset?.purchase_date || ''}"/></div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="a-status" class="form-select">
+          ${['active', 'inactive', 'archived'].map((value) => `
+            <option value="${value}" ${asset?.status === value || (!asset && value === 'active') ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select></div>
     </div>
+    <div class="form-group"><label class="form-label">Purchase Date</label>
+      <input id="a-date" class="form-input" type="date" value="${asset?.purchase_date || ''}"/></div>
     <div class="form-group"><label class="form-label">Evidence / Document (optional)</label>
       <input id="a-file" class="form-input" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf" />
       ${asset?.attachment_url ? `
@@ -101,18 +116,19 @@ async function renderAssets() {
   AssetsPage.assets = assets || [];
   AssetsPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
 
-  const totalValue = AssetsPage.assets.reduce((sum, asset) => sum + Number(asset.estimated_value || 0), 0);
-  const incomeAssets = AssetsPage.assets.filter((asset) => Number(asset.monthly_income || 0) > 0).length;
+  const activeAssets = AssetsPage.assets.filter((asset) => (asset.status || 'active') === 'active');
+  const totalValue = activeAssets.reduce((sum, asset) => sum + Number(asset.estimated_value || 0), 0);
+  const incomeAssets = activeAssets.filter((asset) => Number(asset.monthly_income || 0) > 0).length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total Assets</div>
-          <div class="metric-value">${AssetsPage.assets.length}</div></div>
+          <div class="metric-value">${activeAssets.length}</div></div>
         <div class="metric-card"><div class="metric-label">Total Value</div>
           <div class="metric-value" style="color:var(--accent);">KES ${fmt(totalValue)}</div></div>
         <div class="metric-card"><div class="metric-label">Land</div>
-          <div class="metric-value">${AssetsPage.assets.filter((asset) => asset.asset_type === 'land').length}</div></div>
+          <div class="metric-value">${activeAssets.filter((asset) => asset.asset_type === 'land').length}</div></div>
         <div class="metric-card"><div class="metric-label">Income Assets</div>
           <div class="metric-value">${incomeAssets}</div></div>
       </div>
@@ -128,6 +144,7 @@ async function renderAssets() {
                 <tr>
                   <td>
                     <div style="font-weight:600;">${assetTypeIcon(asset.asset_type)} ${escapeHtml(asset.name || '-')}</div>
+                    <div style="margin-top:6px;">${assetStatusBadge(asset.status || 'active')}</div>
                     ${asset.notes ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(asset.notes.substring(0, 80))}</div>` : ''}
                     ${assetAttachmentMarkup(asset)}
                   </td>
@@ -199,6 +216,7 @@ async function saveAsset(assetId = null) {
     estimated_value: parseFloat(document.getElementById('a-eval')?.value || '') || 0,
     monthly_income: parseFloat(document.getElementById('a-income')?.value || '') || 0,
     manager_id: document.getElementById('a-mgr')?.value || null,
+    status: document.getElementById('a-status')?.value || 'active',
     purchase_date: document.getElementById('a-date')?.value || null,
     notes: document.getElementById('a-notes')?.value.trim() || null,
     attachment_url: attachmentUrl,

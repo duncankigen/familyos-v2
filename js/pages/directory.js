@@ -5,6 +5,8 @@
 
 const DirectoryPage = {
   vendors: [],
+  taskCountByVendor: {},
+  expenseCountByVendor: {},
 };
 
 function canManageVendors() {
@@ -51,14 +53,14 @@ function vendorForm(vendor = null) {
 
 async function renderDirectory() {
   setTopbar('Vendor Directory', canManageVendors() ? `<button class="btn btn-primary btn-sm" onclick="openAddVendor()">+ Add Vendor</button>` : '');
-  const { data: vendors, error } = await DB.client
-    .from('vendors')
-    .select('*')
-    .eq('family_id', State.fid)
-    .order('category');
+  const [{ data: vendors, error: vendorError }, { data: tasks, error: taskError }, { data: expenses, error: expenseError }] = await Promise.all([
+    DB.client.from('vendors').select('*').eq('family_id', State.fid).order('category'),
+    DB.client.from('tasks').select('assigned_vendor').eq('family_id', State.fid),
+    DB.client.from('expenses').select('vendor_id').eq('family_id', State.fid),
+  ]);
 
-  if (error) {
-    console.error('[Directory] Failed to load vendors:', error);
+  if (vendorError || taskError || expenseError) {
+    console.error('[Directory] Failed to load vendors:', vendorError || taskError || expenseError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load vendors right now')}</div>
@@ -67,6 +69,16 @@ async function renderDirectory() {
   }
 
   DirectoryPage.vendors = vendors || [];
+  DirectoryPage.taskCountByVendor = {};
+  DirectoryPage.expenseCountByVendor = {};
+  (tasks || []).forEach((task) => {
+    if (!task.assigned_vendor) return;
+    DirectoryPage.taskCountByVendor[task.assigned_vendor] = (DirectoryPage.taskCountByVendor[task.assigned_vendor] || 0) + 1;
+  });
+  (expenses || []).forEach((expense) => {
+    if (!expense.vendor_id) return;
+    DirectoryPage.expenseCountByVendor[expense.vendor_id] = (DirectoryPage.expenseCountByVendor[expense.vendor_id] || 0) + 1;
+  });
 
   const grouped = {};
   DirectoryPage.vendors.forEach((vendor) => {
@@ -109,6 +121,10 @@ async function renderDirectory() {
                 ${vendor.email ? `<div style="font-size:12px;color:var(--text2);">${escapeHtml(vendor.email)}</div>` : ''}
                 ${(vendor.rate || vendor.rate_unit) ? `<div style="font-size:12px;color:var(--text2);">Rate: ${vendor.rate ? `KES ${fmt(vendor.rate)}` : '-'}${vendor.rate_unit ? ` / ${escapeHtml(vendor.rate_unit)}` : ''}</div>` : ''}
                 ${(vendor.total_jobs || vendor.total_paid) ? `<div style="font-size:12px;color:var(--text2);">Jobs: ${fmt(vendor.total_jobs || 0)} | Paid: KES ${fmt(vendor.total_paid || 0)}</div>` : ''}
+                ${DirectoryPage.taskCountByVendor[vendor.id] || DirectoryPage.expenseCountByVendor[vendor.id] ? `
+                  <div style="font-size:12px;color:var(--text2);">
+                    Linked tasks: ${fmt(DirectoryPage.taskCountByVendor[vendor.id] || 0)} | Expense records: ${fmt(DirectoryPage.expenseCountByVendor[vendor.id] || 0)}
+                  </div>` : ''}
                 ${vendor.rating ? `<div style="font-size:12px;color:var(--text2);">Rating: ${vendor.rating}/5</div>` : ''}
                 ${vendor.notes ? `<div style="font-size:12px;color:var(--text3);margin-top:6px;">${escapeHtml(vendor.notes)}</div>` : ''}
                 ${canManageVendors() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openEditVendor('${vendor.id}')">Manage</button>` : ''}

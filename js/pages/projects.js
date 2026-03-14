@@ -69,6 +69,40 @@ function canManageProjectTeam() {
   return canManageProjects();
 }
 
+function projectForm(project = null) {
+  return `
+    <div class="form-group"><label class="form-label">Project Name</label>
+      <input id="p-name" class="form-input" placeholder="Kitale Maize Farm 2025" value="${escapeHtml(project?.name || '')}"/></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="p-desc" class="form-textarea" placeholder="Project description...">${escapeHtml(project?.description || '')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select id="p-type" class="form-select">
+          ${['farming', 'construction', 'business', 'investment', 'other'].map((value) => `
+            <option value="${value}" ${project?.project_type === value || (!project && value === 'farming') ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="p-status" class="form-select">
+          ${['planning', 'active', 'paused', 'completed', 'cancelled'].map((value) => `
+            <option value="${value}" ${project?.status === value || (!project && value === 'planning') ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Budget (KES)</label>
+        <input id="p-budget" class="form-input" type="number" placeholder="150000" value="${project?.budget ?? ''}"/></div>
+      <div class="form-group"><label class="form-label">Start Date</label>
+        <input id="p-start" class="form-input" type="date" value="${project?.start_date || ''}"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">End Date</label>
+      <input id="p-end" class="form-input" type="date" value="${project?.end_date || ''}"/></div>
+    <p id="project-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
 async function loadProjectOverviewData() {
   const sb = DB.client;
   const [{ data: projects, error: projectError }, { data: expenses, error: expenseError }, { data: members, error: memberError }] = await Promise.all([
@@ -219,6 +253,10 @@ async function renderProjectDetail() {
     return;
   }
 
+  if (!ProjectsPage.projects.find((item) => item.id === project.id)) {
+    ProjectsPage.projects = [project, ...ProjectsPage.projects.filter((item) => item.id !== project.id)];
+  }
+
   ProjectsPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
   const teamRows = (projectMembers || []).map((row) => ({
     ...row,
@@ -235,6 +273,7 @@ async function renderProjectDetail() {
 
   setTopbar(project.name, `
     <button class="btn btn-sm" onclick="backToProjects()">Back to Projects</button>
+    ${canManageProjects() ? `<button class="btn btn-sm" onclick="openEditProject('${project.id}')">Manage Project</button>` : ''}
     ${project.project_type === 'farming' ? `<button class="btn btn-primary btn-sm" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
   `);
   document.querySelectorAll('.sb-item').forEach((item) => {
@@ -352,7 +391,56 @@ async function renderProjectDetail() {
           ${project.project_type === 'farming' ? `<button class="btn btn-sm" style="margin-top:8px;" onclick="openProjectFarming('${project.id}')">Open Farm Manager</button>` : ''}
         </div>
       </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title">Recent Expenses</div>
+        ${(expenses || []).map((expense) => `
+          <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
+            <div>
+              <div style="font-size:13px;font-weight:600;">${escapeHtml(expense.description || 'Expense')}</div>
+              <div style="font-size:11px;color:var(--text3);">${fmtDate(expense.created_at)}</div>
+            </div>
+            <div style="font-size:13px;font-weight:700;color:var(--warning);">KES ${fmt(expense.amount || 0)}</div>
+          </div>`).join('')}
+        ${!(expenses || []).length ? empty('No expenses linked to this project yet') : ''}
+      </div>
     </div>`;
+}
+
+function openEditProject(projectId) {
+  if (!canManageProjects()) return;
+  const project = ProjectsPage.projects.find((item) => item.id === projectId);
+  if (!project) return;
+
+  Modal.open('Manage Project', projectForm(project), [
+    project.status !== 'cancelled' ? {
+      label: 'Archive',
+      cls: 'btn',
+      fn: async () => archiveProject(projectId),
+    } : null,
+    {
+      label: 'Save',
+      cls: 'btn-primary',
+      fn: async () => saveProject(projectId),
+    },
+  ].filter(Boolean));
+}
+
+async function archiveProject(projectId) {
+  hideErr('project-err');
+  const { error } = await DB.client
+    .from('projects')
+    .update({ status: 'cancelled' })
+    .eq('id', projectId)
+    .eq('family_id', State.fid);
+
+  if (error) {
+    showErr('project-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('project-detail');
 }
 
 function projectMemberForm(memberRow = null) {
@@ -474,73 +562,17 @@ async function openAddProject() {
     return;
   }
 
-  Modal.open('New Project', `
-    <div class="form-group"><label class="form-label">Project Name</label>
-      <input id="p-name" class="form-input" placeholder="Kitale Maize Farm 2025"/></div>
-    <div class="form-group"><label class="form-label">Description</label>
-      <textarea id="p-desc" class="form-textarea" placeholder="Project description..."></textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Type</label>
-        <select id="p-type" class="form-select">
-          <option value="farming">Farming</option>
-          <option value="construction">Construction</option>
-          <option value="business">Business</option>
-          <option value="investment">Investment</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Status</label>
-        <select id="p-status" class="form-select">
-          <option value="planning">Planning</option>
-          <option value="active">Active</option>
-        </select>
-      </div>
+  Modal.open('New Project', `${projectForm()}
+    <div class="form-group"><label class="form-label">Project Leader</label>
+      <select id="p-leader" class="form-select">
+        <option value="">- Select -</option>
+        ${(members || []).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
+      </select>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Budget (KES)</label>
-        <input id="p-budget" class="form-input" type="number" placeholder="150000"/></div>
-      <div class="form-group"><label class="form-label">Project Leader</label>
-        <select id="p-leader" class="form-select">
-          <option value="">- Select -</option>
-          ${(members || []).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Start Date</label>
-        <input id="p-start" class="form-input" type="date"/></div>
-      <div class="form-group"><label class="form-label">End Date</label>
-        <input id="p-end" class="form-input" type="date"/></div>
-    </div>
-    <p id="project-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Create', cls: 'btn-primary', fn: async () => {
     hideErr('project-err');
-    const name = document.getElementById('p-name')?.value.trim() || '';
-    if (!name) {
-      showErr('project-err', 'Project name is required.');
-      return;
-    }
-
-    const { data: project, error: createError } = await DB.client
-      .from('projects')
-      .insert({
-        family_id: State.fid,
-        name,
-        description: document.getElementById('p-desc')?.value.trim() || null,
-        project_type: document.getElementById('p-type')?.value || 'other',
-        status: document.getElementById('p-status')?.value || 'planning',
-        budget: parseFloat(document.getElementById('p-budget')?.value || '') || 0,
-        start_date: document.getElementById('p-start')?.value || null,
-        end_date: document.getElementById('p-end')?.value || null,
-        created_by: State.uid,
-      })
-      .select()
-      .single();
-
-    if (createError || !project) {
-      showErr('project-err', createError?.message || 'Unable to create project.');
-      return;
-    }
+    const project = await saveProject();
+    if (!project) return;
 
     const leaderId = document.getElementById('p-leader')?.value || '';
     if (leaderId) {
@@ -558,6 +590,47 @@ async function openAddProject() {
     rememberActiveProject(project.id);
     nav('project-detail');
   }}]);
+}
+
+async function saveProject(projectId = '') {
+  hideErr('project-err');
+  const name = document.getElementById('p-name')?.value.trim() || '';
+  if (!name) {
+    showErr('project-err', 'Project name is required.');
+    return null;
+  }
+
+  const payload = {
+    family_id: State.fid,
+    name,
+    description: document.getElementById('p-desc')?.value.trim() || null,
+    project_type: document.getElementById('p-type')?.value || 'other',
+    status: document.getElementById('p-status')?.value || 'planning',
+    budget: parseFloat(document.getElementById('p-budget')?.value || '') || 0,
+    start_date: document.getElementById('p-start')?.value || null,
+    end_date: document.getElementById('p-end')?.value || null,
+  };
+
+  if (!projectId) {
+    payload.created_by = State.uid;
+  }
+
+  const query = projectId
+    ? DB.client.from('projects').update(payload).eq('id', projectId).eq('family_id', State.fid).select().single()
+    : DB.client.from('projects').insert(payload).select().single();
+
+  const { data, error } = await query;
+  if (error) {
+    showErr('project-err', error.message || 'Unable to save project.');
+    return null;
+  }
+
+  if (projectId) {
+    Modal.close();
+    renderPage('project-detail');
+  }
+
+  return data;
 }
 
 Router.register('projects', renderProjects);
