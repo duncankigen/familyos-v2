@@ -81,16 +81,6 @@ function avatarHtml(name, size = 'av-sm') {
   return `<div class="avatar ${size} ${avatarColor(name)}">${initials}</div>`;
 }
 
-/** Speaker icon used to make announcements read like announcements, not chats. */
-function announcementIcon(size = 14) {
-  return `
-    <svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <path d="M2 9.5V6.5h3.2L10 3v10L5.2 9.5H2z"></path>
-      <path d="M11.5 6c.9.6 1.5 1.5 1.5 2s-.6 1.4-1.5 2"></path>
-      <path d="M12.8 4.3c1.4 1 2.2 2.3 2.2 3.7s-.8 2.7-2.2 3.7"></path>
-    </svg>`;
-}
-
 /** Standard loading spinner markup. */
 function loading() {
   return `<div class="loading-screen"><div class="spinner"></div>Loading...</div>`;

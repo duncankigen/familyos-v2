@@ -120,29 +120,25 @@ function renderAnnouncementsView() {
     <div class="content">
       <div class="flex-col">
         ${AnnouncementsPage.items.map((announcement) => `
-          <div class="card">
+          <div class="ai-card ai-amber" style="margin-bottom:0;">
             <div class="flex-between mb8" style="align-items:flex-start;gap:12px;">
-              <div style="font-size:11px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px;">
-                ${announcementIcon(12)}
-                <span>${announcement.author?.full_name || 'Admin'} · ${ago(announcement.created_at)}</span>
+              <div class="flex gap8" style="min-width:0;">
+                ${avatarHtml(announcement.author?.full_name || 'A', 'av-sm')}
+                <div style="min-width:0;">
+                  <div style="font-size:13px;font-weight:600;">${announcement.author?.full_name || 'Admin'}</div>
+                  <div style="font-size:11px;color:var(--text3);">${ago(announcement.created_at)}</div>
+                </div>
               </div>
               ${renderAnnouncementMenu(announcement)}
             </div>
-            <div style="display:flex;align-items:flex-start;gap:10px;">
-              <div style="color:var(--accent);display:flex;align-items:center;justify-content:center;margin-top:2px;">
-                ${announcementIcon(18)}
-              </div>
-              <div style="min-width:0;flex:1;">
-                <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${announcement.title}</div>
-                <div class="ann-flags" style="margin-bottom:8px;">
-                  ${announcement.is_pinned ? '<span class="badge b-amber">Pinned</span>' : ''}
-                  ${(announcement.updated_at && announcement.updated_at !== announcement.created_at)
-                    ? `<span class="ann-meta">Edited ${ago(announcement.updated_at)}</span>`
-                    : ''}
-                </div>
-                <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;">${announcement.message}</div>
-              </div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${announcement.title}</div>
+            <div class="ann-flags" style="margin-bottom:8px;">
+              ${announcement.is_pinned ? '<span class="badge b-amber">Pinned</span>' : ''}
+              ${(announcement.updated_at && announcement.updated_at !== announcement.created_at)
+                ? `<span class="ann-meta">Edited ${ago(announcement.updated_at)}</span>`
+                : ''}
             </div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;">${announcement.message}</div>
           </div>`).join('')}
         ${!AnnouncementsPage.items.length ? `<div class="card">${empty('No announcements yet')}</div>` : ''}
       </div>

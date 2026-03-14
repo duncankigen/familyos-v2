@@ -120,13 +120,11 @@ async function renderDashboard() {
           <div class="card-title">Announcements</div>
           ${(announcements || []).map(a => `
             <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px;">
-              <div style="font-size:11px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px;">
-                ${announcementIcon(12)}
-                <span>${a.author?.full_name || 'Admin'} · ${ago(a.created_at)}</span>
+              <div style="font-size:11px;font-weight:600;color:var(--accent);">
+                ${a.author?.full_name || 'Admin'} · ${ago(a.created_at)}
               </div>
-              <div style="font-size:13px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:6px;">
-                <span style="color:var(--accent);display:flex;align-items:center;">${announcementIcon(14)}</span>
-                <span>${a.title}</span>
+              <div style="font-size:13px;font-weight:600;margin-top:2px;">
+                ${a.title}
                 ${a.is_pinned ? '<span class="badge b-amber" style="margin-left:4px;">Pinned</span>' : ''}
               </div>
               <div style="font-size:12px;color:var(--text2);margin-top:3px;">
