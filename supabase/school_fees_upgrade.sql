@@ -25,10 +25,16 @@ create table if not exists public.school_fee_payments (
   payment_date date not null default current_date,
   reference text,
   notes text,
+  attachment_url text,
+  attachment_name text,
   payment_account_id uuid references public.payment_accounts(id) on delete set null,
   recorded_by uuid references public.users(id) on delete set null,
   created_at timestamptz default now()
 );
+
+alter table public.school_fee_payments
+  add column if not exists attachment_url text,
+  add column if not exists attachment_name text;
 
 create index if not exists school_fee_payments_family_date_idx
 on public.school_fee_payments(family_id, payment_date desc, created_at desc);

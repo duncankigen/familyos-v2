@@ -97,3 +97,48 @@ function empty(msg) {
       ${msg}
     </div>`;
 }
+
+/** Escape user-controlled text before injecting it into HTML. */
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Build a safe filename-friendly suffix. */
+function safeFileName(value) {
+  return String(value || 'file')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'file';
+}
+
+/** Upload a single finance attachment and return a public URL plus label. */
+async function uploadFinanceAttachment(file, folder) {
+  if (!file) return { url: null, name: null };
+
+  const bucket = 'receipts';
+  const ext = (file.name.split('.').pop() || 'file').toLowerCase();
+  const familyId = State.fid || 'family';
+  const userId = State.uid || 'user';
+  const path = `${folder}/${familyId}/${Date.now()}-${userId}-${safeFileName(file.name.replace(/\.[^.]+$/, ''))}.${ext}`;
+
+  const { error: uploadError } = await DB.client.storage
+    .from(bucket)
+    .upload(path, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+
+  if (uploadError) return { error: uploadError };
+
+  const { data } = DB.client.storage.from(bucket).getPublicUrl(path);
+  return {
+    url: data?.publicUrl || null,
+    name: file.name || null,
+  };
+}

@@ -9,7 +9,7 @@ const ExpensesPage = {
   items: [],
   projects: [],
   vendors: [],
-  usersById: {},
+  expandedIds: new Set(),
 };
 
 function canCreateExpenses() {
@@ -21,10 +21,7 @@ function canManageExpenses() {
 }
 
 function expenseInputValue(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;');
+  return escapeHtml(value);
 }
 
 function expenseProjectName(projectId) {
@@ -33,6 +30,33 @@ function expenseProjectName(projectId) {
 
 function expenseVendorName(vendorId) {
   return ExpensesPage.vendors.find((vendor) => vendor.id === vendorId)?.name || null;
+}
+
+function expenseAttachmentLink(expense) {
+  if (!expense.receipt_url) return '';
+  const label = escapeHtml(expense.attachment_name || 'View attachment');
+  return `<a class="details-link" href="${expense.receipt_url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
+function expenseDetailsMarkup(expense) {
+  return `
+    <div class="details-panel">
+      <div class="details-grid">
+        <div>
+          <div class="details-label">Reference</div>
+          <div class="details-value">${expense.reference ? escapeHtml(expense.reference) : '—'}</div>
+        </div>
+        <div>
+          <div class="details-label">Attachment</div>
+          <div class="details-value">${expense.receipt_url ? expenseAttachmentLink(expense) : '—'}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="details-label">Notes</div>
+        <div class="details-value">${expense.notes ? escapeHtml(expense.notes) : 'No notes added.'}</div>
+      </div>
+    </div>
+  `;
 }
 
 function expenseForm(expense = null) {
@@ -78,8 +102,30 @@ function expenseForm(expense = null) {
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Reference (optional)</label>
+      <input id="e-ref" class="form-input" placeholder="Invoice number / M-Pesa ref" value="${expenseInputValue(expense?.reference)}"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea id="e-notes" class="form-textarea" placeholder="More detail about this expense">${expenseInputValue(expense?.notes)}</textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Attachment (optional)</label>
+      <input id="e-attachment" class="form-input" type="file" accept="image/*,.pdf,.doc,.docx"/>
+      ${expense?.receipt_url ? `<div style="font-size:12px;color:var(--text3);margin-top:6px;">Current: ${expenseAttachmentLink(expense)}</div>` : ''}
+    </div>
     <p id="expense-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `;
+}
+
+function toggleExpenseDetails(expenseId) {
+  if (ExpensesPage.expandedIds.has(expenseId)) {
+    ExpensesPage.expandedIds.delete(expenseId);
+  } else {
+    ExpensesPage.expandedIds.add(expenseId);
+  }
+  renderPage('expenses');
 }
 
 async function renderExpenses() {
@@ -91,7 +137,7 @@ async function renderExpenses() {
   const [{ data, error }, { data: projects, error: projectsError }, { data: vendors, error: vendorsError }] = await Promise.all([
     DB.client
       .from('expenses')
-      .select('id,family_id,project_id,vendor_id,amount,category,description,receipt_url,created_by,created_at')
+      .select('id,family_id,project_id,vendor_id,amount,category,description,receipt_url,reference,notes,attachment_name,created_by,created_at')
       .eq('family_id', State.fid)
       .order('created_at', { ascending: false })
       .limit(100),
@@ -142,15 +188,27 @@ async function renderExpenses() {
             </thead>
             <tbody>
               ${ExpensesPage.items.map((expense) => `
-                <tr>
-                  <td style="font-size:13px;">${expense.description}</td>
-                  <td>${expenseProjectName(expense.project_id) ? `<span class="badge b-blue">${expenseProjectName(expense.project_id)}</span>` : '<span style="color:var(--text3);">—</span>'}</td>
-                  <td style="font-size:12px;color:var(--text2);">${expenseVendorName(expense.vendor_id) || '—'}</td>
-                  <td><span class="badge b-gray">${expense.category}</span></td>
+                <tr class="record-row" onclick="toggleExpenseDetails('${expense.id}')">
+                  <td style="font-size:13px;">
+                    <div>${escapeHtml(expense.description)}</div>
+                    <a class="details-toggle" href="#" onclick="event.preventDefault();event.stopPropagation();toggleExpenseDetails('${expense.id}')">
+                      ${ExpensesPage.expandedIds.has(expense.id) ? 'Hide details' : 'View details'}
+                    </a>
+                  </td>
+                  <td>${expenseProjectName(expense.project_id) ? `<span class="badge b-blue">${escapeHtml(expenseProjectName(expense.project_id))}</span>` : '<span style="color:var(--text3);">—</span>'}</td>
+                  <td style="font-size:12px;color:var(--text2);">${expenseVendorName(expense.vendor_id) ? escapeHtml(expenseVendorName(expense.vendor_id)) : '—'}</td>
+                  <td><span class="badge b-gray">${escapeHtml(expense.category)}</span></td>
                   <td><strong style="color:var(--danger);">KES ${fmt(expense.amount)}</strong></td>
                   <td style="color:var(--text3);font-size:12px;">${fmtDate(expense.created_at)}</td>
-                  ${canManageExpenses() ? `<td><button class="btn btn-sm" onclick="openEditExpense('${expense.id}')">Manage</button></td>` : ''}
-                </tr>`).join('')}
+                  ${canManageExpenses() ? `<td><button class="btn btn-sm" onclick="event.stopPropagation();openEditExpense('${expense.id}')">Manage</button></td>` : ''}
+                </tr>
+                ${ExpensesPage.expandedIds.has(expense.id) ? `
+                  <tr class="details-row">
+                    <td colspan="${canManageExpenses() ? 7 : 6}">
+                      ${expenseDetailsMarkup(expense)}
+                    </td>
+                  </tr>` : ''}
+              `).join('')}
             </tbody>
           </table>
         </div>
@@ -198,12 +256,29 @@ async function saveExpense(expenseId = null) {
     return;
   }
 
+  const file = document.getElementById('e-attachment')?.files?.[0] || null;
+  let attachmentPayload = {};
+  if (file) {
+    const upload = await uploadFinanceAttachment(file, 'expenses');
+    if (upload.error) {
+      showErr('expense-err', upload.error.message || 'Unable to upload attachment.');
+      return;
+    }
+    attachmentPayload = {
+      receipt_url: upload.url,
+      attachment_name: upload.name,
+    };
+  }
+
   const payload = {
     amount,
     description,
     category: document.getElementById('e-cat')?.value || 'other',
     project_id: document.getElementById('e-proj')?.value || null,
     vendor_id: document.getElementById('e-vendor')?.value || null,
+    reference: document.getElementById('e-ref')?.value.trim() || null,
+    notes: document.getElementById('e-notes')?.value.trim() || null,
+    ...attachmentPayload,
   };
 
   let error = null;

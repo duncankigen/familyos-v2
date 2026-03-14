@@ -13,6 +13,7 @@ const SchoolFeesPage = {
   feesByStudent: {},
   paymentsByFee: {},
   accountById: {},
+  expandedPaymentIds: new Set(),
 };
 
 function canManageSchoolFees() {
@@ -46,6 +47,11 @@ function schoolFeePayment(paymentId) {
   return SchoolFeesPage.payments.find((payment) => payment.id === paymentId) || null;
 }
 
+function schoolFeeAttachmentLink(payment) {
+  if (!payment.attachment_url) return '';
+  return `<a class="details-link" href="${payment.attachment_url}" target="_blank" rel="noopener noreferrer">${escapeHtml(payment.attachment_name || 'View attachment')}</a>`;
+}
+
 function schoolFeeAccountOptions(selectedId = '') {
   return `
     <option value="">— None —</option>
@@ -66,19 +72,37 @@ function schoolFeeHistoryMarkup(feeId) {
   return payments.map((payment) => `
     <div style="padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;">
       <div class="flex-between" style="align-items:flex-start;gap:8px;">
-        <div>
+        <div style="flex:1;min-width:0;" onclick="toggleSchoolFeePaymentDetails('${feeId}','${payment.id}')">
           <div style="font-size:13px;font-weight:600;">KES ${fmt(payment.amount)}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:2px;">
             ${fmtDate(payment.payment_date || payment.created_at)}
             ${payment.reference ? `· ${payment.reference}` : ''}
           </div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px;">
-            ${SchoolFeesPage.accountById[payment.payment_account_id]?.name || 'No linked account'}
-          </div>
-          ${payment.notes ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${payment.notes}</div>` : ''}
+          <a class="details-toggle" href="#" onclick="event.preventDefault();event.stopPropagation();toggleSchoolFeePaymentDetails('${feeId}','${payment.id}')">
+            ${SchoolFeesPage.expandedPaymentIds.has(payment.id) ? 'Hide details' : 'View details'}
+          </a>
         </div>
         ${canManageSchoolFees() ? `<button class="btn btn-sm" onclick="openSchoolFeePaymentModal('${feeId}','${payment.id}')">Edit</button>` : ''}
       </div>
+      ${SchoolFeesPage.expandedPaymentIds.has(payment.id) ? `
+        <div style="margin-top:10px;">
+          <div class="details-panel">
+            <div class="details-grid">
+              <div>
+                <div class="details-label">Payment Account</div>
+                <div class="details-value">${escapeHtml(SchoolFeesPage.accountById[payment.payment_account_id]?.name || 'No linked account')}</div>
+              </div>
+              <div>
+                <div class="details-label">Attachment</div>
+                <div class="details-value">${payment.attachment_url ? schoolFeeAttachmentLink(payment) : '—'}</div>
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <div class="details-label">Notes</div>
+              <div class="details-value">${payment.notes ? escapeHtml(payment.notes) : 'No notes added.'}</div>
+            </div>
+          </div>
+        </div>` : ''}
     </div>
   `).join('');
 }
@@ -133,6 +157,10 @@ function paymentFormMarkup(payment = null) {
       <input id="fp-ref" class="form-input" placeholder="Bank slip / M-Pesa ref" value="${schoolFeesInputValue(payment?.reference)}"/></div>
     <div class="form-group"><label class="form-label">Notes</label>
       <input id="fp-notes" class="form-input" placeholder="Optional payment notes" value="${schoolFeesInputValue(payment?.notes)}"/></div>
+    <div class="form-group"><label class="form-label">Attachment (optional)</label>
+      <input id="fp-attachment" class="form-input" type="file" accept="image/*,.pdf,.doc,.docx"/>
+      ${payment?.attachment_url ? `<div style="font-size:12px;color:var(--text3);margin-top:6px;">Current: ${schoolFeeAttachmentLink(payment)}</div>` : ''}
+    </div>
   `;
 }
 
@@ -154,7 +182,17 @@ function initialPaymentMarkup() {
       <div class="form-group"><label class="form-label">Reference</label>
         <input id="sf-initial-ref" class="form-input" placeholder="Receipt / M-Pesa ref"/></div>
     </div>
+    <div class="form-group"><label class="form-label">Attachment (optional)</label>
+      <input id="sf-initial-attachment" class="form-input" type="file" accept="image/*,.pdf,.doc,.docx"/></div>
   `;
+}
+
+function toggleSchoolFeePaymentDetails(feeId, paymentId) {
+  const fee = schoolFeeRecord(feeId);
+  if (!fee) return;
+  if (SchoolFeesPage.expandedPaymentIds.has(paymentId)) SchoolFeesPage.expandedPaymentIds.delete(paymentId);
+  else SchoolFeesPage.expandedPaymentIds.add(paymentId);
+  openManageSchoolFee(fee.student_id, feeId);
 }
 
 async function renderSchoolFees() {
@@ -328,6 +366,11 @@ async function saveStudentWithOptionalFee() {
 
     const initialPaid = parseFloat(document.getElementById('sf-initial-paid')?.value || '');
     if (!isNaN(initialPaid) && initialPaid > 0) {
+      const initialAttachment = await schoolFeeAttachmentPayload('sf-initial-attachment', 'school-fees');
+      if (initialAttachment.error) {
+        showErr('student-err', initialAttachment.error.message || 'Unable to upload attachment.');
+        return;
+      }
       const { error: paymentError } = await DB.client.from('school_fee_payments').insert({
         family_id: State.fid,
         school_fee_id: fee.id,
@@ -336,6 +379,7 @@ async function saveStudentWithOptionalFee() {
         payment_account_id: document.getElementById('sf-initial-account')?.value || null,
         reference: document.getElementById('sf-initial-ref')?.value.trim() || 'Initial payment',
         recorded_by: State.uid,
+        ...initialAttachment,
       });
 
       if (paymentError) {
@@ -452,6 +496,11 @@ async function saveSchoolFeeTerm(studentId) {
 
   const initialPaid = parseFloat(document.getElementById('sf-initial-paid')?.value || '');
   if (!isNaN(initialPaid) && initialPaid > 0) {
+    const initialAttachment = await schoolFeeAttachmentPayload('sf-initial-attachment', 'school-fees');
+    if (initialAttachment.error) {
+      showErr('term-err', initialAttachment.error.message || 'Unable to upload attachment.');
+      return;
+    }
     const { error: paymentError } = await DB.client.from('school_fee_payments').insert({
       family_id: State.fid,
       school_fee_id: fee.id,
@@ -460,6 +509,7 @@ async function saveSchoolFeeTerm(studentId) {
       payment_account_id: document.getElementById('sf-initial-account')?.value || null,
       reference: document.getElementById('sf-initial-ref')?.value.trim() || 'Initial payment',
       recorded_by: State.uid,
+      ...initialAttachment,
     });
 
     if (paymentError) {
@@ -553,12 +603,19 @@ async function saveSchoolFeePayment(feeId, paymentId = null) {
     return;
   }
 
+  const attachmentPayload = await schoolFeeAttachmentPayload('fp-attachment', 'school-fees');
+  if (attachmentPayload.error) {
+    showErr('payment-err', attachmentPayload.error.message || 'Unable to upload attachment.');
+    return;
+  }
+
   const payload = {
     amount,
     payment_date: document.getElementById('fp-date')?.value || schoolFeeDateValue(new Date().toISOString()),
     payment_account_id: document.getElementById('fp-account')?.value || null,
     reference: document.getElementById('fp-ref')?.value.trim() || null,
     notes: document.getElementById('fp-notes')?.value.trim() || null,
+    ...attachmentPayload,
   };
 
   let error = null;
@@ -580,6 +637,19 @@ async function saveSchoolFeePayment(feeId, paymentId = null) {
 
   Modal.close();
   renderPage('schoolfees');
+}
+
+async function schoolFeeAttachmentPayload(inputId, folder) {
+  const file = document.getElementById(inputId)?.files?.[0] || null;
+  if (!file) return {};
+
+  const upload = await uploadFinanceAttachment(file, folder);
+  if (upload.error) return { error: upload.error };
+
+  return {
+    attachment_url: upload.url,
+    attachment_name: upload.name,
+  };
 }
 
 Router.register('schoolfees', renderSchoolFees);
