@@ -1,8 +1,9 @@
 /**
  * js/pages/ai.js
  * ─────────────────────────────────────────────────────
- * AI Advisor: tries the Supabase Edge Function first,
- * then automatically falls back to local analysis.
+ * AI Advisor: calls the authenticated Supabase Edge
+ * Function first, then automatically falls back to
+ * local analysis if the AI service fails.
  */
 
 function canGenerateAIInsights() {
@@ -100,18 +101,14 @@ async function askAI() {
   if (aiFunctionConfigured()) {
     try {
       const context = await _buildContext();
-      const res = await fetch(window.RuntimeConfig.aiEdgeFunctionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: window.RuntimeConfig?.supabaseAnonKey || '',
-        },
-        body: JSON.stringify({ question, familyContext: context }),
+      const { data, error } = await DB.client.functions.invoke('ai-advisor', {
+        body: { question, familyContext: context },
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.answer) {
-        throw new Error(data?.error || data?.message || `AI service error (${res.status})`);
+      if (error) {
+        throw new Error(error.message || 'AI service request failed.');
+      }
+      if (!data?.answer) {
+        throw new Error(data?.error || data?.message || 'AI service returned no answer.');
       }
       const answer = data.answer;
       if (responseEl) {

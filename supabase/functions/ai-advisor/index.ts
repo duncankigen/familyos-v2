@@ -4,13 +4,17 @@
  * FamilyOS AI Advisor Edge Function
  *
  * Recommended setup:
- * - Disable "Verify JWT" for this function in Supabase
+ * - Keep "Verify JWT" enabled in Supabase
  * - Set secrets:
  *   ANTHROPIC_API_KEY
- *   EXPECTED_ANON_KEY
  *   ALLOWED_ORIGIN (optional, defaults to FamilyOS Vercel URL)
  *   ANTHROPIC_MODEL (optional)
+ *
+ * This function also verifies the caller inside the handler
+ * so authenticated user context is explicit and debuggable.
  */
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const DEFAULT_ALLOWED_ORIGIN = "https://familyos-v2.vercel.app";
 
@@ -56,14 +60,28 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const expectedAnonKey = Deno.env.get("EXPECTED_ANON_KEY");
-    if (!expectedAnonKey) {
-      return json({ error: "EXPECTED_ANON_KEY not configured" }, 500, configured);
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization") || "";
+    if (!authHeader) {
+      return json({ error: "Missing Authorization header" }, 401, configured);
     }
 
-    const apiKeyHeader = req.headers.get("apikey") || "";
-    if (!apiKeyHeader || apiKeyHeader !== expectedAnonKey) {
-      return json({ error: "Invalid apikey" }, 401, configured);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return json({ error: "Supabase environment is not configured" }, 500, configured);
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    });
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      return json({ error: userError?.message || "Unauthorized" }, 401, configured);
     }
 
     const payload = await req.json().catch(() => ({}));
@@ -94,6 +112,7 @@ Family context:
 - Active Goals: ${JSON.stringify(familyContext?.goals ?? [])}
 - Meetings: ${JSON.stringify(familyContext?.meetings ?? [])}
 - Documents: ${JSON.stringify(familyContext?.documents ?? {})}
+- Requesting User: ${userData.user.id}
 
 Provide specific, actionable, culturally aware advice relevant to East African families managing shared resources.
 Be concise, under 200 words.
