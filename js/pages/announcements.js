@@ -123,9 +123,9 @@ function renderAnnouncementsView() {
           <div class="card ann-card">
             <div class="ann-head">
               <div class="flex gap8 ann-author">
-                ${avatarHtml(announcement.users?.full_name || 'A', 'av-sm')}
+                ${avatarHtml(announcement.author?.full_name || 'A', 'av-sm')}
                 <div style="min-width:0;">
-                  <div class="ann-name">${announcement.users?.full_name || 'Admin'}</div>
+                  <div class="ann-name">${announcement.author?.full_name || 'Admin'}</div>
                   <div class="ann-time">${ago(announcement.created_at)}</div>
                 </div>
               </div>
@@ -165,7 +165,18 @@ async function renderAnnouncements() {
 
   const { data, error } = await DB.client
     .from('announcements')
-    .select('id,family_id,title,message,created_by,created_at,updated_at,is_pinned,is_archived,users(full_name)')
+    .select(`
+      id,
+      family_id,
+      title,
+      message,
+      created_by,
+      created_at,
+      updated_at,
+      is_pinned,
+      is_archived,
+      author:users!announcements_created_by_fkey(full_name)
+    `)
     .eq('family_id', State.fid)
     .eq('is_archived', false)
     .order('is_pinned', { ascending: false })
