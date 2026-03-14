@@ -13,6 +13,7 @@ const State = {
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
   unreadAnnouncements: 0,
+  unreadNotifications: 0,
   isDark:          localStorage.getItem('fos_theme') === 'dark',
 
   /** Convenience getter so pages don't repeat this pattern. */

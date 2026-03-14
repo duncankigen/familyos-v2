@@ -246,6 +246,7 @@ function resetSessionState() {
   State.currentProfile = null;
   State.currentFamilyId = null;
   State.unreadAnnouncements = 0;
+  State.unreadNotifications = 0;
   Modal.close();
 }
 

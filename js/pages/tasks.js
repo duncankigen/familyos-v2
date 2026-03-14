@@ -9,6 +9,7 @@ const TasksPage = {
   projectsById: {},
   vendorsById: {},
   vendors: [],
+  commentsByTaskId: {},
 };
 
 function canCreateTasks() {
@@ -25,6 +26,12 @@ function taskStatusGroup(task) {
 
 function taskVendorName(vendorId) {
   return TasksPage.vendorsById[vendorId]?.name || null;
+}
+
+function taskAssigneeLabel(task) {
+  if (!task?.assigned_user) return 'Unassigned';
+  if (task.assigned_user === State.uid) return 'Assigned to me';
+  return `Assigned: ${TasksPage.membersById[task.assigned_user]?.full_name || 'Member'}`;
 }
 
 function taskForm(task = null) {
@@ -66,6 +73,112 @@ function taskForm(task = null) {
     </div>
     <p id="task-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `;
+}
+
+function taskHistoryMarkup(task) {
+  const createdBy = TasksPage.membersById[task.created_by]?.full_name || 'System';
+  const assignedTo = task.assigned_user
+    ? (task.assigned_user === State.uid ? 'Me' : (TasksPage.membersById[task.assigned_user]?.full_name || 'Member'))
+    : 'Unassigned';
+  const vendor = taskVendorName(task.assigned_vendor) || '-';
+  const project = TasksPage.projectsById[task.project_id]?.name || '-';
+
+  return `
+    <div class="details-panel" style="margin-top:14px;">
+      <div class="details-grid">
+        <div><div class="details-label">Created By</div><div class="details-value">${escapeHtml(createdBy)}</div></div>
+        <div><div class="details-label">Created</div><div class="details-value">${task.created_at ? fmtDate(task.created_at) : '-'}</div></div>
+        <div><div class="details-label">Assigned To</div><div class="details-value">${escapeHtml(assignedTo)}</div></div>
+        <div><div class="details-label">Vendor</div><div class="details-value">${escapeHtml(vendor)}</div></div>
+        <div><div class="details-label">Project</div><div class="details-value">${escapeHtml(project)}</div></div>
+        <div><div class="details-label">Completed</div><div class="details-value">${task.completed_at ? fmtDate(task.completed_at) : '-'}</div></div>
+      </div>
+    </div>`;
+}
+
+function taskCommentMarkup(comment) {
+  return `
+    <div class="task-comment">
+      <div class="flex gap8" style="align-items:flex-start;">
+        ${avatarHtml(comment.author?.full_name || 'M', 'av-sm')}
+        <div style="min-width:0;">
+          <div class="task-comment-head">
+            <span>${escapeHtml(comment.author?.full_name || 'Member')}</span>
+            <span>${ago(comment.created_at)}</span>
+          </div>
+          <div class="task-comment-body">${escapeHtml(comment.comment || '')}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function taskCommentsMarkup(taskId) {
+  const comments = TasksPage.commentsByTaskId[taskId] || [];
+  return `
+    <div style="margin-top:14px;">
+      <div class="card-title" style="margin-bottom:10px;">Comments</div>
+      <div id="task-comments-list">
+        ${comments.length ? comments.map(taskCommentMarkup).join('') : `<div style="font-size:12px;color:var(--text3);">No comments yet.</div>`}
+      </div>
+      <div style="margin-top:12px;">
+        <textarea id="task-comment-input" class="form-textarea" placeholder="Add context or a progress note..."></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+          <button class="btn btn-sm" onclick="submitTaskComment('${taskId}')">Post Comment</button>
+        </div>
+        <p id="task-comment-err" style="color:var(--danger);font-size:12px;display:none;margin-top:6px;"></p>
+      </div>
+    </div>`;
+}
+
+function taskManageMarkup(task) {
+  return `${taskForm(task)}
+    <hr class="divider" />
+    <div class="card-title" style="margin-bottom:10px;">History</div>
+    ${taskHistoryMarkup(task)}
+    <hr class="divider" />
+    ${taskCommentsMarkup(task.id)}`;
+}
+
+async function loadTaskComments(taskId) {
+  if (!taskId) return [];
+
+  const { data, error } = await DB.client
+    .from('task_comments')
+    .select('id,task_id,user_id,comment,created_at')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.warn('[Tasks] Failed to load comments:', error);
+    TasksPage.commentsByTaskId[taskId] = [];
+    return [];
+  }
+
+  const comments = data || [];
+  const authorIds = [...new Set(comments.map((comment) => comment.user_id).filter(Boolean))];
+  const authorsById = {};
+
+  if (authorIds.length) {
+    const { data: authors, error: authorError } = await DB.client
+      .from('users')
+      .select('id,full_name')
+      .in('id', authorIds);
+
+    if (authorError) {
+      console.warn('[Tasks] Failed to load comment authors:', authorError);
+    } else {
+      (authors || []).forEach((author) => {
+        authorsById[author.id] = author;
+      });
+    }
+  }
+
+  TasksPage.commentsByTaskId[taskId] = comments.map((comment) => ({
+    ...comment,
+    author: authorsById[comment.user_id] || null,
+  }));
+
+  return TasksPage.commentsByTaskId[taskId];
 }
 
 async function renderTasks() {
@@ -134,7 +247,7 @@ async function renderTasks() {
                   <div class="card" style="border-left:3px solid ${isOverdue ? 'var(--danger)' : col.color};">
                     <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escapeHtml(task.title)}</div>
                     <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">
-                      ${TasksPage.membersById[task.assigned_user]?.full_name ? 'Assigned: ' + escapeHtml(TasksPage.membersById[task.assigned_user].full_name) : 'Unassigned'}
+                      ${escapeHtml(taskAssigneeLabel(task))}
                       ${TasksPage.projectsById[task.project_id]?.name ? ` | Project: ${escapeHtml(TasksPage.projectsById[task.project_id].name)}` : ''}
                       ${taskVendorName(task.assigned_vendor) ? ` | Vendor: ${escapeHtml(taskVendorName(task.assigned_vendor))}` : ''}
                     </div>
@@ -178,11 +291,13 @@ function openAddTask() {
   }]);
 }
 
-function openEditTask(taskId) {
+async function openEditTask(taskId) {
   const task = TasksPage.tasks.find((item) => item.id === taskId);
   if (!task || !canUpdateTask(task)) return;
 
-  Modal.open('Manage Task', taskForm(task), [
+  await loadTaskComments(taskId);
+
+  Modal.open('Manage Task', taskManageMarkup(task), [
     task.status !== 'cancelled' ? {
       label: 'Cancel Task',
       cls: 'btn',
@@ -204,6 +319,7 @@ async function saveTask(taskId = null, forcedStatus = '') {
     return;
   }
 
+  const existingTask = taskId ? TasksPage.tasks.find((item) => item.id === taskId) : null;
   const status = forcedStatus || document.getElementById('t-status')?.value || 'pending';
   const payload = {
     family_id: State.fid,
@@ -216,21 +332,70 @@ async function saveTask(taskId = null, forcedStatus = '') {
     priority: document.getElementById('t-prio')?.value || 'medium',
     status,
     completed_at: status === 'completed' ? new Date().toISOString() : null,
-    created_by: State.uid,
   };
 
-  const query = taskId
-    ? DB.client.from('tasks').update(payload).eq('id', taskId)
-    : DB.client.from('tasks').insert(payload);
+  if (!taskId) {
+    payload.created_by = State.uid;
+  }
 
-  const { error } = await query;
+  const query = taskId
+    ? DB.client.from('tasks').update(payload).eq('id', taskId).select('id,project_id,title,assigned_user').single()
+    : DB.client.from('tasks').insert(payload).select('id,project_id,title,assigned_user').single();
+
+  const { data, error } = await query;
   if (error) {
     showErr('task-err', error.message);
     return;
   }
 
+  await Notifications.notifyTaskAssignment(data, existingTask?.assigned_user || '');
+
   Modal.close();
   renderPage('tasks');
+}
+
+async function submitTaskComment(taskId) {
+  hideErr('task-comment-err');
+  const comment = document.getElementById('task-comment-input')?.value.trim() || '';
+  if (!comment) {
+    showErr('task-comment-err', 'Write a comment before posting.');
+    return;
+  }
+
+  const { data, error } = await DB.client
+    .from('task_comments')
+    .insert({
+      task_id: taskId,
+      family_id: State.fid,
+      user_id: State.uid,
+      comment,
+    })
+    .select('id,task_id,user_id,comment,created_at')
+    .single();
+
+  if (error) {
+    showErr('task-comment-err', error.message);
+    return;
+  }
+
+  const author = State.currentProfile?.full_name
+    ? { id: State.uid, full_name: State.currentProfile.full_name }
+    : { id: State.uid, full_name: TasksPage.membersById[State.uid]?.full_name || 'You' };
+
+  if (!TasksPage.commentsByTaskId[taskId]) {
+    TasksPage.commentsByTaskId[taskId] = [];
+  }
+
+  TasksPage.commentsByTaskId[taskId].push({
+    ...data,
+    author,
+  });
+
+  document.getElementById('task-comment-input').value = '';
+  const list = document.getElementById('task-comments-list');
+  if (list) {
+    list.innerHTML = TasksPage.commentsByTaskId[taskId].map(taskCommentMarkup).join('');
+  }
 }
 
 Router.register('tasks', renderTasks);

@@ -25,6 +25,16 @@ function assetTypeIcon(type) {
   }[type] || 'ASSET';
 }
 
+function assetAttachmentMarkup(asset) {
+  if (!asset?.attachment_url) return '';
+  return `
+    <div style="margin-top:8px;font-size:12px;">
+      <a class="details-link" href="${asset.attachment_url}" target="_blank" rel="noopener noreferrer">
+        View attachment${asset.attachment_name ? `: ${escapeHtml(asset.attachment_name)}` : ''}
+      </a>
+    </div>`;
+}
+
 function assetForm(asset = null) {
   return `
     <div class="form-group"><label class="form-label">Asset Name</label>
@@ -55,6 +65,15 @@ function assetForm(asset = null) {
         </select></div>
       <div class="form-group"><label class="form-label">Purchase Date</label>
         <input id="a-date" class="form-input" type="date" value="${asset?.purchase_date || ''}"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">Evidence / Document (optional)</label>
+      <input id="a-file" class="form-input" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,image/*,application/pdf" />
+      ${asset?.attachment_url ? `
+        <div style="margin-top:6px;font-size:12px;">
+          <a class="details-link" href="${asset.attachment_url}" target="_blank" rel="noopener noreferrer">
+            Current file${asset.attachment_name ? `: ${escapeHtml(asset.attachment_name)}` : ''}
+          </a>
+        </div>` : ''}
     </div>
     <div class="form-group"><label class="form-label">Notes</label>
       <textarea id="a-notes" class="form-textarea" placeholder="Registration, title deed, or management details...">${escapeHtml(asset?.notes || '')}</textarea></div>
@@ -110,6 +129,7 @@ async function renderAssets() {
                   <td>
                     <div style="font-weight:600;">${assetTypeIcon(asset.asset_type)} ${escapeHtml(asset.name || '-')}</div>
                     ${asset.notes ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(asset.notes.substring(0, 80))}</div>` : ''}
+                    ${assetAttachmentMarkup(asset)}
                   </td>
                   <td><span class="badge b-blue" style="text-transform:capitalize;">${escapeHtml(asset.asset_type || 'other')}</span></td>
                   <td style="font-size:12px;color:var(--text2);">${escapeHtml(asset.location || '-')}</td>
@@ -151,10 +171,24 @@ function openEditAsset(assetId) {
 
 async function saveAsset(assetId = null) {
   hideErr('asset-err');
+  const existingAsset = assetId ? AssetsPage.assets.find((item) => item.id === assetId) : null;
   const name = document.getElementById('a-name')?.value.trim() || '';
   if (!name) {
     showErr('asset-err', 'Asset name is required.');
     return;
+  }
+
+  let attachmentUrl = existingAsset?.attachment_url || null;
+  let attachmentName = existingAsset?.attachment_name || null;
+  const file = document.getElementById('a-file')?.files?.[0] || null;
+  if (file) {
+    const upload = await uploadFinanceAttachment(file, 'assets');
+    if (upload?.error) {
+      showErr('asset-err', upload.error.message || 'Attachment upload failed.');
+      return;
+    }
+    attachmentUrl = upload.url;
+    attachmentName = upload.name;
   }
 
   const payload = {
@@ -167,6 +201,8 @@ async function saveAsset(assetId = null) {
     manager_id: document.getElementById('a-mgr')?.value || null,
     purchase_date: document.getElementById('a-date')?.value || null,
     notes: document.getElementById('a-notes')?.value.trim() || null,
+    attachment_url: attachmentUrl,
+    attachment_name: attachmentName,
   };
 
   const query = assetId

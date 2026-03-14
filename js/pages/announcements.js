@@ -285,6 +285,7 @@ async function saveAnnouncement(announcementId = null) {
 
   const now = new Date().toISOString();
   let error = null;
+  let savedAnnouncementId = announcementId;
 
   if (announcementId) {
     const announcement = AnnouncementsPage.get(announcementId);
@@ -303,18 +304,24 @@ async function saveAnnouncement(announcementId = null) {
       return;
     }
 
-    ({ error } = await DB.client.from('announcements').insert({
+    const result = await DB.client.from('announcements').insert({
       family_id: State.fid,
       title,
       message,
       created_by: State.uid,
       updated_at: now,
-    }));
+    }).select('id').single();
+    error = result.error;
+    savedAnnouncementId = result.data?.id || null;
   }
 
   if (error) {
     showErr('announcement-err', announcementErrorMessage(error));
     return;
+  }
+
+  if (!announcementId && savedAnnouncementId) {
+    await Notifications.notifyAnnouncementCreated(title, savedAnnouncementId);
   }
 
   Modal.close();

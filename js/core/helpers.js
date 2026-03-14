@@ -117,7 +117,7 @@ function safeFileName(value) {
     .replace(/^-|-$/g, '') || 'file';
 }
 
-/** Upload a single finance attachment and return a public URL plus label. */
+/** Upload a single optional record attachment and return a public URL plus label. */
 async function uploadFinanceAttachment(file, folder) {
   if (!file) return { url: null, name: null };
 

@@ -42,6 +42,23 @@
   color: var(--text2);
   display: flex; align-items: center;
 }
+.notif-btn { position: relative; }
+.topbar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* ── Cards ────────────────────────────────────── */
 .card {
@@ -296,6 +313,71 @@ tbody tr:hover td        { background: var(--bg3); }
 .ann-menu-item:hover        { background: var(--bg3); }
 .ann-menu-item-danger       { color: var(--danger); }
 .ann-menu-item svg          { flex-shrink: 0; }
+
+/* ── Notifications / task comments ───────────── */
+.notif-list { display: flex; flex-direction: column; gap: 10px; }
+.notif-item {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  text-align: left;
+  padding: 12px 14px;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--text);
+}
+.notif-item:hover { background: var(--bg3); }
+.notif-item-unread { border-color: var(--border2); background: var(--bg3); }
+.notif-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.notif-title-row { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.notif-title { font-size: 13px; font-weight: 600; }
+.notif-time { font-size: 11px; color: var(--text3); white-space: nowrap; }
+.notif-message { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.notif-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent);
+}
+.notif-dot-warning { background: var(--warning); }
+.notif-dot-alert { background: var(--danger); }
+.notif-dot-success { background: var(--success); }
+
+.task-comment {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--bg3);
+  margin-bottom: 8px;
+}
+.task-comment-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.task-comment-head span:last-child {
+  font-weight: 400;
+  color: var(--text3);
+  font-size: 11px;
+}
+.task-comment-body {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
 
 /* ── Misc helpers ─────────────────────────────── */
 .divider   { border: none; border-top: 1px solid var(--border); margin: 14px 0; }

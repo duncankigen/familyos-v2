@@ -428,6 +428,9 @@ on farm_outputs(crop_id);
 create index if not exists farm_outputs_livestock_idx
 on farm_outputs(livestock_id);
 
+create index if not exists task_comments_task_created_idx
+on task_comments(task_id, created_at desc);
+
 -- ============================================================
 -- STEP 8: TASKS
 -- ============================================================
@@ -448,6 +451,15 @@ create table if not exists tasks (
   created_at timestamptz default now(),
   constraint task_status_check check (status in ('pending','in_progress','completed','overdue','cancelled')),
   constraint task_priority_check check (priority in ('low','medium','high','urgent'))
+);
+
+create table if not exists task_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  family_id uuid not null references families(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  comment text not null,
+  created_at timestamptz default now()
 );
 
 -- ============================================================
@@ -513,6 +525,8 @@ create table if not exists assets (
   monthly_income numeric default 0,
   manager_id uuid references users(id) on delete set null,
   notes text,
+  attachment_url text,
+  attachment_name text,
   created_at timestamptz default now(),
   constraint asset_type_check check (asset_type in ('land','building','vehicle','tractor','livestock','equipment','investment','other'))
 );
@@ -670,6 +684,7 @@ alter table farm_inputs enable row level security;
 alter table livestock enable row level security;
 alter table livestock_events enable row level security;
 alter table farm_outputs enable row level security;
+alter table task_comments enable row level security;
 alter table tasks enable row level security;
 alter table vendors enable row level security;
 alter table assets enable row level security;
@@ -1312,6 +1327,20 @@ create policy "assigned user updates task status"
 on tasks for update
 using (assigned_user = auth.uid() or get_my_role() in ('admin','project_manager'));
 
+create policy "family reads task comments"
+on task_comments for select
+using (family_id = get_my_family_id());
+
+create policy "family members add task comments"
+on task_comments for insert
+with check (
+  family_id = get_my_family_id()
+  and user_id = auth.uid()
+  and task_id in (
+    select id from tasks where family_id = get_my_family_id()
+  )
+);
+
 -- VENDORS
 create policy "family reads vendors"
 on vendors for select
@@ -1608,6 +1637,49 @@ begin
   return new;
 end;
 $$;
+
+create or replace function sync_livestock_count_from_events()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update livestock
+    set count = greatest(0, coalesce(count, 0) + coalesce(new.count_change, 0))
+    where id = new.livestock_id;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if old.livestock_id = new.livestock_id then
+      update livestock
+      set count = greatest(0, coalesce(count, 0) - coalesce(old.count_change, 0) + coalesce(new.count_change, 0))
+      where id = new.livestock_id;
+    else
+      update livestock
+      set count = greatest(0, coalesce(count, 0) - coalesce(old.count_change, 0))
+      where id = old.livestock_id;
+
+      update livestock
+      set count = greatest(0, coalesce(count, 0) + coalesce(new.count_change, 0))
+      where id = new.livestock_id;
+    end if;
+    return new;
+  end if;
+
+  update livestock
+  set count = greatest(0, coalesce(count, 0) - coalesce(old.count_change, 0))
+  where id = old.livestock_id;
+  return old;
+end;
+$$;
+
+drop trigger if exists sync_livestock_count on livestock_events;
+create trigger sync_livestock_count
+  after insert or update or delete on livestock_events
+  for each row execute procedure sync_livestock_count_from_events();
 
 drop trigger if exists log_farm_outputs on farm_outputs;
 create trigger log_farm_outputs after insert on farm_outputs

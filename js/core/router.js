@@ -103,6 +103,12 @@ const Router = {
         console.warn('[Router] Failed to refresh announcement badge:', error);
       });
     }
+
+    if (typeof Notifications?.refreshBadge === 'function') {
+      Notifications.refreshBadge().catch((error) => {
+        console.warn('[Router] Failed to refresh notifications badge:', error);
+      });
+    }
   },
 };
 
@@ -111,8 +117,11 @@ function nav(page) { Router.go(page); }
 
 /** Set the topbar title and optional action buttons HTML. */
 function setTopbar(title, actionsHtml = '') {
+  const notificationHtml = typeof Notifications?.buttonHtml === 'function'
+    ? Notifications.buttonHtml()
+    : '';
   document.getElementById('page-title').textContent       = title;
-  document.getElementById('topbar-actions').innerHTML     = actionsHtml;
+  document.getElementById('topbar-actions').innerHTML     = `${actionsHtml || ''}${notificationHtml}`;
 }
 
 /**
