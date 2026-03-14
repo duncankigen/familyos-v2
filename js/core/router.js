@@ -9,6 +9,7 @@
 const Router = {
   /** Registry populated by each page file calling Router.register(). */
   _routes: {},
+  _storageKey: 'fos_page',
 
   /**
    * Register a page renderer.
@@ -21,18 +22,66 @@ const Router = {
     this._routes[key] = fn;
   },
 
+  has(page) {
+    return Boolean(this._routes[page]);
+  },
+
+  resolve(page) {
+    return this.has(page) ? page : 'dashboard';
+  },
+
+  restore() {
+    const hashPage = window.location.hash.replace(/^#\/?/, '').trim();
+    const savedPage = localStorage.getItem(this._storageKey) || '';
+    return this.resolve(hashPage || savedPage || 'dashboard');
+  },
+
+  remember(page) {
+    const resolvedPage = this.resolve(page);
+    localStorage.setItem(this._storageKey, resolvedPage);
+
+    const nextHash = `#${resolvedPage}`;
+    if (window.location.hash === nextHash) return;
+
+    if (window.history?.replaceState) {
+      const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+      window.history.replaceState(null, '', nextUrl);
+      return;
+    }
+
+    window.location.hash = resolvedPage;
+  },
+
+  clearRememberedPage() {
+    localStorage.removeItem(this._storageKey);
+
+    if (!window.location.hash) return;
+
+    if (window.history?.replaceState) {
+      const nextUrl = `${window.location.pathname}${window.location.search}`;
+      window.history.replaceState(null, '', nextUrl);
+      return;
+    }
+
+    window.location.hash = '';
+  },
+
   /**
    * Navigate to a page.
    * Updates the active sidebar item, sets page title, runs renderer.
    *
    * @param {string} page
    */
-  async go(page) {
-    State.currentPage = page;
+  async go(page, options = {}) {
+    const { remember = true } = options;
+    const resolvedPage = this.resolve(page);
+
+    State.currentPage = resolvedPage;
+    if (remember) this.remember(resolvedPage);
 
     // Update sidebar active state
     document.querySelectorAll('.sb-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.page === page);
+      el.classList.toggle('active', el.dataset.page === resolvedPage);
     });
 
     // Close mobile sidebar
@@ -42,11 +91,11 @@ const Router = {
     const content = document.getElementById('page-content');
     content.innerHTML = loading();
 
-    const renderer = this._routes[page];
+    const renderer = this._routes[resolvedPage];
     if (renderer) {
       await renderer();
     } else {
-      content.innerHTML = `<div class="content"><div class="card">Page <strong>${page}</strong> not found.</div></div>`;
+      content.innerHTML = `<div class="content"><div class="card">Page <strong>${resolvedPage}</strong> not found.</div></div>`;
     }
   },
 };

@@ -16,7 +16,7 @@ function toggleTheme() {
 }
 
 function show(id) {
-  ['boot-screen', 'auth-screen', 'app'].forEach((screenId) => {
+  ['auth-screen', 'app'].forEach((screenId) => {
     const el = document.getElementById(screenId);
     if (el) el.style.display = screenId === id ? 'flex' : 'none';
   });
@@ -24,7 +24,6 @@ function show(id) {
 
 function showFatal(msg) {
   console.error('[App] Fatal startup error:', msg);
-  State.isBootstrapping = false;
   Modal.close();
   show('auth-screen');
   showErr('auth-err', msg || 'Something went wrong while starting FamilyOS.');
@@ -208,7 +207,7 @@ async function hydrateFamily(profile, user) {
 
   Modal.close();
   show('app');
-  Router.go('dashboard');
+  Router.go(Router.restore());
 }
 
 async function loadUserProfile(user) {
@@ -248,25 +247,39 @@ function resetSessionState() {
   Modal.close();
 }
 
+async function handleAuthStateChange(event, session) {
+  const nextUser = session?.user || null;
+  const currentUserId = State.currentUser?.id || null;
+  const nextUserId = nextUser?.id || null;
+
+  if (!nextUser) {
+    resetSessionState();
+    show('auth-screen');
+    return;
+  }
+
+  State.currentUser = nextUser;
+
+  // Supabase can emit auth events repeatedly for the same browser session.
+  if (event === 'TOKEN_REFRESHED') return;
+
+  const alreadyHydrated = currentUserId === nextUserId && Boolean(State.currentProfile);
+  if (alreadyHydrated && ['INITIAL_SESSION', 'SIGNED_IN', 'USER_UPDATED'].includes(event)) {
+    return;
+  }
+
+  await loadUserProfile(nextUser);
+}
+
 function installAuthListener() {
   if (State.authSubscription) return;
 
-  const { data } = DB.client.auth.onAuthStateChange(async (_event, session) => {
-    try {
-      if (session?.user) {
-        await loadUserProfile(session.user);
-        return;
-      }
-
-      if (State.isBootstrapping) {
-        return;
-      }
-
-      resetSessionState();
-      show('auth-screen');
-    } catch (err) {
-      showFatal(err?.message || 'Authentication state failed to load.');
-    }
+  const { data } = DB.client.auth.onAuthStateChange((event, session) => {
+    window.setTimeout(() => {
+      handleAuthStateChange(event, session).catch((err) => {
+        showFatal(err?.message || 'Authentication state failed to load.');
+      });
+    }, 0);
   });
 
   State.authSubscription = data.subscription;
@@ -274,30 +287,19 @@ function installAuthListener() {
 
 async function init() {
   try {
-    State.isBootstrapping = true;
-    show('boot-screen');
     initTheme();
     Sidebar.render();
 
     if (!DB.init()) {
-      State.isBootstrapping = false;
       show('auth-screen');
       showErr('auth-err', 'FamilyOS is not configured. Set the Supabase URL and anon key in js/config.js, then refresh.');
       return;
     }
 
     installAuthListener();
-    const { data: { session } } = await DB.client.auth.getSession();
-    if (session?.user) {
-      await loadUserProfile(session.user);
-    } else {
-      show('auth-screen');
-    }
   } catch (e) {
     console.error('[App] Init failed:', e);
     showFatal(e?.message || 'FamilyOS could not start.');
-  } finally {
-    State.isBootstrapping = false;
   }
 }
 

@@ -117,6 +117,7 @@ const Auth = {
   /** Sign out the current user and return to auth screen. */
   async signOut() {
     await DB.client.auth.signOut();
+    if (window.Router?.clearRememberedPage) Router.clearRememberedPage();
     if (typeof resetSessionState === 'function') resetSessionState();
     show('auth-screen');
   },
