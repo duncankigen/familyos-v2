@@ -148,8 +148,16 @@ create table if not exists announcements (
   title text not null,
   message text not null,
   created_by uuid references users(id),
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  is_pinned boolean not null default false,
+  is_archived boolean not null default false,
+  archived_at timestamptz,
+  archived_by uuid
 );
+
+create index if not exists announcements_family_feed_idx
+on announcements(family_id, is_archived, is_pinned, created_at desc);
 
 -- ============================================================
 -- STEP 3: FINANCE TABLES
@@ -961,21 +969,36 @@ using (
 );
 
 -- ANNOUNCEMENTS: family members read; admins/managers write
+drop policy if exists "family reads announcements" on announcements;
+drop policy if exists "admins write announcements" on announcements;
+drop policy if exists "creator updates announcement" on announcements;
+drop policy if exists "creator deletes announcement" on announcements;
+drop policy if exists "team creates announcements" on announcements;
+drop policy if exists "creators and admins update announcements" on announcements;
+drop policy if exists "admins delete announcements" on announcements;
+
 create policy "family reads announcements"
 on announcements for select
 using (family_id = get_my_family_id());
 
-create policy "admins write announcements"
+create policy "team creates announcements"
 on announcements for insert
 with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer','project_manager'));
 
-create policy "creator updates announcement"
+create policy "creators and admins update announcements"
 on announcements for update
-using (created_by = auth.uid() and family_id = get_my_family_id());
+using (
+  family_id = get_my_family_id()
+  and (created_by = auth.uid() or get_my_role() = 'admin')
+)
+with check (
+  family_id = get_my_family_id()
+  and (created_by = auth.uid() or get_my_role() = 'admin')
+);
 
-create policy "creator deletes announcement"
+create policy "admins delete announcements"
 on announcements for delete
-using (created_by = auth.uid() and get_my_role() = 'admin');
+using (family_id = get_my_family_id() and get_my_role() = 'admin');
 
 -- CONTRIBUTIONS: all family members can read; treasurer/admin can write
 create policy "family reads contributions"

@@ -220,6 +220,49 @@ tbody tr:hover td        { background: var(--bg3); }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
 .empty-state svg { margin: 0 auto 12px; display: block; opacity: .4; }
 
+/* ── Announcement cards ───────────────────────── */
+.ann-card       { position: relative; }
+.ann-head       { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.ann-author     { min-width: 0; }
+.ann-name       { font-size: 13px; font-weight: 600; }
+.ann-time,
+.ann-meta       { font-size: 11px; color: var(--text3); }
+.ann-flags      { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.ann-title      { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.ann-message    { font-size: 13px; color: var(--text2); line-height: 1.6; white-space: pre-wrap; }
+.ann-menu       { position: relative; flex-shrink: 0; }
+.ann-menu-toggle { color: var(--text3); }
+.ann-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 170px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+  padding: 6px;
+  z-index: 40;
+}
+.ann-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ann-menu-item:hover        { background: var(--bg3); }
+.ann-menu-item-danger       { color: var(--danger); }
+.ann-menu-item svg          { flex-shrink: 0; }
+
 /* ── Misc helpers ─────────────────────────────── */
 .divider   { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 .tag-row   { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
