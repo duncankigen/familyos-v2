@@ -249,11 +249,12 @@ async function renderVault() {
                             const meta = documentLinkMeta(doc.file_url);
                             return `
                               <div style="font-size:11px;color:var(--text3);">${escapeHtml(meta?.hostLabel || doc.file_url)}</div>
-                              <div style="font-size:11px;word-break:break-all;">
-                                <a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">
-                                  ${escapeHtml(documentLinkText(doc.file_url))}
-                                </a>
-                              </div>`;
+                              ${meta?.isExternal ? `
+                                <div style="font-size:11px;word-break:break-all;">
+                                  <a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">
+                                    ${escapeHtml(documentLinkText(doc.file_url))}
+                                  </a>
+                                </div>` : ''}`;
                           })() : ''}
                         </td>
                         <td>${documentAccessBadge(doc.access_level)}</td>
