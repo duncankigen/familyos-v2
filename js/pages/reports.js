@@ -76,23 +76,29 @@ async function renderReports() {
   const sb = DB.client;
   const fid = State.fid;
   const now = new Date();
-
-  const { data: farmingProjects } = await sb
-    .from('projects')
-    .select('id')
-    .eq('family_id', fid)
-    .eq('project_type', 'farming');
-
-  const farmingProjectIds = (farmingProjects || []).map((project) => project.id);
-  const outputQuery = farmingProjectIds.length
-    ? sb.from('farm_outputs').select('project_id,usage_type,total_value,quantity,created_at').in('project_id', farmingProjectIds)
-    : Promise.resolve({ data: [] });
-  const inputQuery = farmingProjectIds.length
-    ? sb.from('farm_inputs').select('project_id,quantity,cost_per_unit').in('project_id', farmingProjectIds)
-    : Promise.resolve({ data: [] });
-  const activityQuery = farmingProjectIds.length
-    ? sb.from('project_activities').select('project_id,cost').in('project_id', farmingProjectIds)
-    : Promise.resolve({ data: [] });
+  const { data: projects } = await sb.from('projects').select('id,project_type').eq('family_id', fid);
+  const farmingProjectIds = (projects || []).filter((project) => project.project_type === 'farming').map((project) => project.id);
+  const { data: farmOutputs } = farmingProjectIds.length
+    ? await sb.from('farm_outputs').select('project_id,usage_type,total_value,quantity,output_category,created_at').in('project_id', farmingProjectIds)
+    : { data: [] };
+  const { data: farmInputs } = farmingProjectIds.length
+    ? await sb.from('farm_inputs').select('project_id,quantity,cost_per_unit').in('project_id', farmingProjectIds)
+    : { data: [] };
+  const { data: activities } = farmingProjectIds.length
+    ? await sb.from('project_activities').select('project_id,cost').in('project_id', farmingProjectIds)
+    : { data: [] };
+  const { data: livestock } = farmingProjectIds.length
+    ? await sb.from('livestock').select('id,project_id').in('project_id', farmingProjectIds)
+    : { data: [] };
+  const livestockIds = (livestock || []).map((item) => item.id);
+  const { data: livestockEventsRaw } = livestockIds.length
+    ? await sb.from('livestock_events').select('livestock_id,cost').in('livestock_id', livestockIds)
+    : { data: [] };
+  const livestockProjectById = Object.fromEntries((livestock || []).map((item) => [item.id, item.project_id]));
+  const livestockEvents = (livestockEventsRaw || []).map((event) => ({
+    ...event,
+    project_id: livestockProjectById[event.livestock_id] || null,
+  }));
 
   const [
     { data: contrib },
@@ -100,22 +106,18 @@ async function renderReports() {
     { data: members },
     { data: vendors },
     { data: assets },
-    { data: farmOutputs },
-    { data: farmInputs },
-    { data: activities },
+    { data: tasks },
     { data: meetings },
     { data: goals },
     { data: documents },
     { data: insights },
   ] = await Promise.all([
     sb.from('contributions').select('amount,created_at,user_id,contribution_type').eq('family_id', fid).order('created_at', { ascending: false }),
-    sb.from('expenses').select('amount,created_at,category,description').eq('family_id', fid).order('created_at', { ascending: false }),
+    sb.from('expenses').select('amount,created_at,category,description,project_id,vendor_id').eq('family_id', fid).order('created_at', { ascending: false }),
     sb.from('users').select('id,full_name').eq('family_id', fid),
-    sb.from('vendors').select('id,name,total_paid,total_jobs').eq('family_id', fid),
+    sb.from('vendors').select('id,name').eq('family_id', fid),
     sb.from('assets').select('id,name,asset_type,status,estimated_value,monthly_income').eq('family_id', fid),
-    outputQuery,
-    inputQuery,
-    activityQuery,
+    sb.from('tasks').select('assigned_vendor').eq('family_id', fid),
     sb.from('meetings').select('id,status').eq('family_id', fid),
     sb.from('family_goals').select('id,status').eq('family_id', fid),
     sb.from('documents').select('id,access_level').eq('family_id', fid),
@@ -123,9 +125,10 @@ async function renderReports() {
   ]);
 
   const membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
-  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const netBalance = totalContributions - totalExpenses;
+  const cashSummary = FinanceCore.buildCashSummary(contrib || [], exp || []);
+  const totalContributions = cashSummary.total_contributions;
+  const totalExpenses = cashSummary.total_expenses;
+  const netBalance = cashSummary.balance;
 
   const contributionSeries = buildMonthlySeries(contrib || [], (item) => item.amount);
   const expenseSeries = buildMonthlySeries(exp || [], (item) => item.amount);
@@ -146,32 +149,29 @@ async function renderReports() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  const vendorSpend = (vendors || [])
-    .map((vendor) => ({
-      name: vendor.name,
-      totalPaid: Number(vendor.total_paid || 0),
-      totalJobs: Number(vendor.total_jobs || 0),
-    }))
-    .sort((a, b) => b.totalPaid - a.totalPaid)
-    .slice(0, 5);
+  const vendorLedger = FinanceCore.buildVendorLedger(vendors || [], exp || [], tasks || []);
+  const vendorSpend = vendorLedger.topVendors;
 
   const activeAssets = (assets || []).filter((asset) => (asset.status || 'active') === 'active');
   const archivedAssets = (assets || []).filter((asset) => (asset.status || 'active') === 'archived').length;
   const assetValue = activeAssets.reduce((sum, asset) => sum + Number(asset.estimated_value || 0), 0);
   const assetIncome = activeAssets.reduce((sum, asset) => sum + Number(asset.monthly_income || 0), 0);
 
-  const soldOutputs = (farmOutputs || []).filter((output) => output.usage_type === 'sold');
-  const storedOutputs = (farmOutputs || []).filter((output) => output.usage_type === 'stored');
-  const farmSales = soldOutputs.reduce((sum, output) => sum + Number(output.total_value || 0), 0);
-  const farmInputCost = (farmInputs || []).reduce((sum, input) => sum + (Number(input.quantity || 0) * Number(input.cost_per_unit || 0)), 0);
-  const farmActivityCost = (activities || []).reduce((sum, activity) => sum + Number(activity.cost || 0), 0);
-  const farmCost = farmInputCost + farmActivityCost;
+  const farmSummary = FinanceCore.buildFarmSummary(
+    projects || [],
+    farmOutputs || [],
+    farmInputs || [],
+    activities || [],
+    livestockEvents || [],
+    exp || [],
+  );
+  const farmSales = farmSummary.salesValue;
 
   const scheduledMeetings = (meetings || []).filter((meeting) => meeting.status === 'scheduled').length;
   const activeGoals = (goals || []).filter((goal) => goal.status === 'active').length;
   const unreadInsights = (insights || []).filter((insight) => !insight.is_read && (!insight.expires_at || new Date(insight.expires_at) > now)).length;
   const contributorsCount = Object.keys(memberTotals).length;
-  const totalVendorSpend = (vendors || []).reduce((sum, vendor) => sum + Number(vendor.total_paid || 0), 0);
+  const totalVendorSpend = vendorLedger.totalPaid;
 
   ReportsPage.summaryRows = [
     { metric: 'Generated On', value: fmtDate(now.toISOString()) },
@@ -188,7 +188,8 @@ async function renderReports() {
     { metric: 'Active Asset Value', value: assetValue },
     { metric: 'Asset Monthly Income', value: assetIncome },
     { metric: 'Sold Farm Output Value', value: farmSales },
-    { metric: 'Farm Cost', value: farmCost },
+    { metric: 'Farm Operational Cost', value: farmSummary.operationalCost },
+    { metric: 'Farm Cash Spend', value: farmSummary.cashSpend },
   ];
 
   ReportsPage.contributionRows = (contrib || []).map((item) => ({
@@ -303,13 +304,14 @@ async function renderReports() {
           ${vendorSpend.length ? `
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Vendor</th><th>Paid</th><th>Jobs</th></tr></thead>
+                <thead><tr><th>Vendor</th><th>Paid</th><th>Tasks</th><th>Expense Records</th></tr></thead>
                 <tbody>
                   ${vendorSpend.map((vendor) => `
                     <tr>
                       <td>${escapeHtml(vendor.name)}</td>
-                      <td>KES ${fmt(vendor.totalPaid)}</td>
-                      <td>${fmt(vendor.totalJobs)}</td>
+                      <td>KES ${fmt(vendor.ledger_total_paid)}</td>
+                      <td>${fmt(vendor.ledger_total_jobs)}</td>
+                      <td>${fmt(vendor.expense_record_count)}</td>
                     </tr>`).join('')}
                 </tbody>
               </table>
@@ -343,14 +345,18 @@ async function renderReports() {
               <div class="metric-value" style="color:var(--success);">KES ${fmt(farmSales)}</div>
             </div>
             <div class="metric-card">
-              <div class="metric-label">Farm Cost</div>
-              <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmCost)}</div>
+              <div class="metric-label">Operational Cost</div>
+              <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmSummary.operationalCost)}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Cash Spend</div>
+              <div class="metric-value">KES ${fmt(farmSummary.cashSpend)}</div>
             </div>
           </div>
           <div style="font-size:12px;color:var(--text2);line-height:1.7;">
-            Sold output records: <strong>${soldOutputs.length}</strong><br/>
-            Stored output records: <strong>${storedOutputs.length}</strong><br/>
-            Gross spread: <strong>KES ${fmt(farmSales - farmCost)}</strong>
+            Sold output records: <strong>${farmSummary.soldCount}</strong><br/>
+            Stored output records: <strong>${farmSummary.storedCount}</strong><br/>
+            Gross operating spread: <strong>KES ${fmt(farmSales - farmSummary.operationalCost)}</strong>
           </div>
         </div>
       </div>

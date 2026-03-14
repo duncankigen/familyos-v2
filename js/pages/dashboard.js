@@ -34,36 +34,7 @@ async function attachDashboardAnnouncementAuthors(items) {
 }
 
 async function fetchDashboardFinanceSummary(fid) {
-  const [{ data: contrib }, { data: exp }] = await Promise.all([
-    DB.client.from('contributions').select('amount,created_at').eq('family_id', fid),
-    DB.client.from('expenses').select('amount,created_at').eq('family_id', fid),
-  ]);
-
-  const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const thisMonthContributions = (contrib || [])
-    .filter((item) => {
-      const date = new Date(item.created_at);
-      return date.getMonth() === month && date.getFullYear() === year;
-    })
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const thisMonthExpenses = (exp || [])
-    .filter((item) => {
-      const date = new Date(item.created_at);
-      return date.getMonth() === month && date.getFullYear() === year;
-    })
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-  return {
-    total_contributions: totalContributions,
-    total_expenses: totalExpenses,
-    balance: totalContributions - totalExpenses,
-    this_month_contributions: thisMonthContributions,
-    this_month_expenses: thisMonthExpenses,
-  };
+  return FinanceCore.fetchCashSummary(fid);
 }
 
 function dashboardActionsHtml() {

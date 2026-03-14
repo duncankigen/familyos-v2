@@ -9,54 +9,7 @@ function canManageFinanceAccounts() {
 }
 
 async function fetchFinanceSummary(fid) {
-  const { data, error } = await DB.client.rpc('get_family_finance_summary', {
-    p_family_id: fid,
-  });
-
-  const summary = Array.isArray(data) ? data[0] : data;
-  if (!error && summary) {
-    return {
-      total_contributions: Number(summary.total_contributions || 0),
-      total_expenses: Number(summary.total_expenses || 0),
-      balance: Number(summary.balance || 0),
-      this_month_contributions: Number(summary.this_month_contributions || 0),
-      this_month_expenses: Number(summary.this_month_expenses || 0),
-      emergency_fund_balance: Number(summary.emergency_fund_balance || 0),
-    };
-  }
-
-  const [{ data: contrib }, { data: exp }, { data: ef }] = await Promise.all([
-    DB.client.from('contributions').select('amount,created_at').eq('family_id', fid),
-    DB.client.from('expenses').select('amount,created_at').eq('family_id', fid),
-    DB.client.from('emergency_fund').select('current_amount').eq('family_id', fid).maybeSingle(),
-  ]);
-
-  const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
-  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount), 0);
-  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount), 0);
-  const thisMonthContributions = (contrib || [])
-    .filter((item) => {
-      const date = new Date(item.created_at);
-      return date.getMonth() === month && date.getFullYear() === year;
-    })
-    .reduce((sum, item) => sum + Number(item.amount), 0);
-  const thisMonthExpenses = (exp || [])
-    .filter((item) => {
-      const date = new Date(item.created_at);
-      return date.getMonth() === month && date.getFullYear() === year;
-    })
-    .reduce((sum, item) => sum + Number(item.amount), 0);
-
-  return {
-    total_contributions: totalContributions,
-    total_expenses: totalExpenses,
-    balance: totalContributions - totalExpenses,
-    this_month_contributions: thisMonthContributions,
-    this_month_expenses: thisMonthExpenses,
-    emergency_fund_balance: Number(ef?.current_amount || 0),
-  };
+  return FinanceCore.fetchCashSummary(fid);
 }
 
 async function renderFinance() {
@@ -83,13 +36,7 @@ async function renderFinance() {
   (contrib || []).forEach((item) => {
     byType[item.contribution_type] = (byType[item.contribution_type] || 0) + Number(item.amount);
   });
-  const outstandingSchoolFees = (schoolFees || []).reduce((sum, fee) => sum + Math.max(0, Number(fee.total_fee) - Number(fee.paid_amount)), 0);
-  const studentsWithBalances = new Set(
-    (schoolFees || [])
-      .filter((fee) => Number(fee.total_fee) > Number(fee.paid_amount))
-      .map((fee) => fee.student_id)
-      .filter(Boolean)
-  ).size;
+  const schoolFeeSummary = FinanceCore.buildSchoolFeeSummary(schoolFees || []);
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -110,10 +57,10 @@ async function renderFinance() {
 
       <div class="g2 mb16">
         <div class="metric-card"><div class="metric-label">Outstanding School Fees</div>
-          <div class="metric-value" style="color:var(--danger);">KES ${fmt(outstandingSchoolFees)}</div>
+          <div class="metric-value" style="color:var(--danger);">KES ${fmt(schoolFeeSummary.outstanding)}</div>
           <div class="metric-sub">Across all active fee records</div></div>
         <div class="metric-card"><div class="metric-label">Students With Balance</div>
-          <div class="metric-value">${studentsWithBalances}</div>
+          <div class="metric-value">${schoolFeeSummary.unpaidStudents}</div>
           <div class="metric-sub">Need follow-up on school fees</div></div>
       </div>
 

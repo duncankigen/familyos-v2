@@ -301,6 +301,9 @@ async function renderFarming() {
   const outputQuery = projectIds.length
     ? sb.from('farm_outputs').select('*').in('project_id', projectIds).order('output_date', { ascending: false }).limit(20)
     : Promise.resolve({ data: [], error: null });
+  const expenseQuery = projectIds.length
+    ? sb.from('expenses').select('project_id,amount').eq('family_id', State.fid).in('project_id', projectIds)
+    : Promise.resolve({ data: [], error: null });
 
   const [
     { data: crops, error: cropError },
@@ -309,10 +312,11 @@ async function renderFarming() {
     { data: livestock, error: livestockError },
     { data: livestockEvents, error: livestockEventsError },
     { data: outputs, error: outputError },
-  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery, livestockEventsQuery, outputQuery]);
+    { data: expenses, error: expenseError },
+  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery, livestockEventsQuery, outputQuery, expenseQuery]);
 
-  if (cropError || activityError || inputError || livestockError || livestockEventsError || outputError) {
-    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError || livestockEventsError || outputError);
+  if (cropError || activityError || inputError || livestockError || livestockEventsError || outputError || expenseError) {
+    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError || livestockEventsError || outputError || expenseError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load farm records right now')}</div>
@@ -325,11 +329,15 @@ async function renderFarming() {
   const farmActivities = activities || [];
   const farmInputs = inputs || [];
   const farmLivestock = livestock || [];
-  const farmLivestockEvents = (livestockEvents || []).filter((event) => {
-    const item = farmLivestock.find((row) => row.id === event.livestock_id);
-    return Boolean(item);
-  });
+  const livestockProjectById = Object.fromEntries(farmLivestock.map((row) => [row.id, row.project_id]));
+  const farmLivestockEvents = (livestockEvents || [])
+    .filter((event) => Boolean(livestockProjectById[event.livestock_id]))
+    .map((event) => ({
+      ...event,
+      project_id: livestockProjectById[event.livestock_id],
+    }));
   const farmOutputs = outputs || [];
+  const farmExpenses = expenses || [];
 
   FarmingPage.crops = farmCrops;
   FarmingPage.livestock = farmLivestock;
@@ -341,14 +349,15 @@ async function renderFarming() {
     const date = new Date(item.output_date || item.created_at);
     return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
   });
-  const soldValue = farmOutputs
-    .filter((item) => item.usage_type === 'sold')
-    .reduce((sum, item) => sum + Number(item.total_value || 0), 0);
-  const soldCount = farmOutputs.filter((item) => item.usage_type === 'sold').length;
-  const storedCount = farmOutputs.filter((item) => item.usage_type === 'stored').length;
-  const consumedCount = farmOutputs.filter((item) => item.usage_type === 'consumed').length;
-  const farmCost = farmActivities.reduce((sum, item) => sum + Number(item.cost || 0), 0)
-    + farmInputs.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.cost_per_unit || 0)), 0);
+  const farmSummary = FinanceCore.buildFarmSummary(
+    farmProjects,
+    farmOutputs,
+    farmInputs,
+    farmActivities,
+    farmLivestockEvents,
+    farmExpenses,
+  );
+  const soldValue = farmSummary.salesValue;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -372,8 +381,19 @@ async function renderFarming() {
           <div class="metric-value" style="color:var(--accent);">${thisMonthOutputs.length}</div></div>
         <div class="metric-card"><div class="metric-label">Sold Value</div>
           <div class="metric-value" style="color:var(--success);">KES ${fmt(soldValue)}</div></div>
-        <div class="metric-card"><div class="metric-label">${scopedProject ? 'Project Cost' : 'Farm Cost'}</div>
-          <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmCost)}</div></div>
+        <div class="metric-card"><div class="metric-label">${scopedProject ? 'Operational Cost' : 'Farm Operational Cost'}</div>
+          <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmSummary.operationalCost)}</div></div>
+      </div>
+
+      <div class="g4 mb16">
+        <div class="metric-card"><div class="metric-label">Cash Spend</div>
+          <div class="metric-value">KES ${fmt(farmSummary.cashSpend)}</div></div>
+        <div class="metric-card"><div class="metric-label">Sold Records</div>
+          <div class="metric-value">${farmSummary.soldCount}</div></div>
+        <div class="metric-card"><div class="metric-label">Stored Records</div>
+          <div class="metric-value">${farmSummary.storedCount}</div></div>
+        <div class="metric-card"><div class="metric-label">Consumed Records</div>
+          <div class="metric-value">${farmSummary.consumedCount}</div></div>
       </div>
 
       ${!FarmingPage.projects.length ? `

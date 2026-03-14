@@ -280,7 +280,7 @@ async function buildLocalAIAnswer(question, context) {
     sections.push('Recommended Actions');
     sections.push([
       data.assets.monthlyIncome > 0 ? `- Scale income-generating assets already bringing in about KES ${fmt(data.assets.monthlyIncome)} monthly.` : '- Identify at least one income-generating asset or side business because no monthly asset income is recorded yet.',
-      data.farming.salesValue > 0 ? `- Grow farm sales beyond the current KES ${fmt(data.farming.salesValue)} by increasing sold output and reducing farm costs now at KES ${fmt(data.farming.totalCost)}.` : '- Review farming projects for produce that can be sold because recorded farm sales are still low.',
+      data.farming.salesValue > 0 ? `- Grow farm sales beyond the current KES ${fmt(data.farming.salesValue)} by increasing sold output and reducing farm operational costs now at KES ${fmt(data.farming.operationalCost)}.` : '- Review farming projects for produce that can be sold because recorded farm sales are still low.',
       data.vendors.topVendors[0] ? `- Negotiate margins and better terms around heavy vendor spend, starting with ${data.vendors.topVendors[0].name}.` : '- Build clearer vendor and procurement tracking so spending can be optimized.',
       data.projects.activeCount > 0 ? `- Focus on projects already active (${data.projects.activeCount}) before opening new ones so existing investments start paying back faster.` : '- Tie new income ideas to clear owners and deadlines because no active projects are carrying growth right now.',
     ].filter(Boolean).join('\n'));
@@ -301,7 +301,7 @@ async function buildLocalAIAnswer(question, context) {
   } else if (ql.includes('expense') || ql.includes('spend') || ql.includes('cost')) {
     const topCategory = data.finances.topExpenseCategories[0];
     sections.push('Recommended Actions');
-    sections.push(`- Largest expense area is ${topCategory ? `${topCategory.category} at KES ${fmt(topCategory.amount)}` : 'not yet clear from recorded data'}.\n- Vendor-linked spend stands at KES ${fmt(data.vendors.totalPaid)}.\n- Farm cost is KES ${fmt(data.farming.totalCost)} and should be reviewed alongside outputs sold.`);
+    sections.push(`- Largest expense area is ${topCategory ? `${topCategory.category} at KES ${fmt(topCategory.amount)}` : 'not yet clear from recorded data'}.\n- Vendor-linked spend stands at KES ${fmt(data.vendors.totalPaid)}.\n- Farm operational cost is KES ${fmt(data.farming.operationalCost)} and farm cash spend is KES ${fmt(data.farming.cashSpend)}.`);
   } else if (ql.includes('meeting')) {
     sections.push('Recommended Actions');
     sections.push(data.meetings.nextMeeting
@@ -312,7 +312,7 @@ async function buildLocalAIAnswer(question, context) {
     sections.push([
       `- Protect the current balance of KES ${fmt(data.finances.netBalance)} by watching ${data.tasks.overdueCount} overdue task(s) and KES ${fmt(data.schoolFees.outstandingTotal)} in school fee pressure.`,
       data.assets.monthlyIncome > 0 ? `- Reinvest part of the monthly asset income of KES ${fmt(data.assets.monthlyIncome)} into the strongest active goal or income project.` : '- Add at least one dependable monthly income stream because no meaningful asset income is recorded yet.',
-      data.farming.salesValue > 0 ? `- Compare farm sales of KES ${fmt(data.farming.salesValue)} against farm cost of KES ${fmt(data.farming.totalCost)} and improve the margin.` : '- Track outputs sold versus costs more closely so farming decisions improve.',
+      data.farming.salesValue > 0 ? `- Compare farm sales of KES ${fmt(data.farming.salesValue)} against farm operational cost of KES ${fmt(data.farming.operationalCost)} and improve the margin.` : '- Track outputs sold versus costs more closely so farming decisions improve.',
     ].filter(Boolean).join('\n'));
   }
 
@@ -420,8 +420,8 @@ function buildLocalInsights(context) {
     insights.push({
       insight_type: 'farming_advice',
       title: 'Farm margin check',
-      message: `Farm sales stand at KES ${fmt(context.farming.salesValue)} against recorded farm cost of KES ${fmt(context.farming.totalCost)}. Review the sold, stored, and consumed mix before the next cycle.`,
-      severity: context.farming.salesValue >= context.farming.totalCost ? 'success' : 'warning',
+      message: `Farm sales stand at KES ${fmt(context.farming.salesValue)} against operational cost of KES ${fmt(context.farming.operationalCost)} and cash spend of KES ${fmt(context.farming.cashSpend)}. Review the sold, stored, and consumed mix before the next cycle.`,
+      severity: context.farming.salesValue >= context.farming.operationalCost ? 'success' : 'warning',
     });
   } else if (context.finances.netBalance > 0) {
     insights.push({
@@ -440,13 +440,13 @@ async function _buildContext() {
   const fid = State.fid;
   const [{ data: contrib }, { data: exp }, { data: tasks }, { data: goals }, { data: meetings }, { data: docs }, { data: projects }, { data: vendors }, { data: assets }, { data: fees }, { data: members }, { data: announcements }, { data: comments }] = await Promise.all([
     sb.from('contributions').select('amount,contribution_type,created_at,user_id').eq('family_id', fid),
-    sb.from('expenses').select('amount,category,created_at').eq('family_id', fid),
+    sb.from('expenses').select('amount,category,created_at,project_id,vendor_id').eq('family_id', fid),
     sb.from('tasks').select('title,status,deadline,priority,created_at').eq('family_id', fid).neq('status', 'completed').order('deadline', { ascending: true }).limit(20),
     sb.from('family_goals').select('title,target_amount,current_amount,status').eq('family_id', fid),
     sb.from('meetings').select('title,status,meeting_date').eq('family_id', fid),
     sb.from('documents').select('id,category,access_level').eq('family_id', fid),
     sb.from('projects').select('id,name,status,budget,project_type,start_date,end_date').eq('family_id', fid),
-    sb.from('vendors').select('id,name,total_paid,total_jobs').eq('family_id', fid),
+    sb.from('vendors').select('id,name').eq('family_id', fid),
     sb.from('assets').select('id,name,asset_type,status,estimated_value,monthly_income').eq('family_id', fid),
     sb.from('school_fees').select('student_id,total_fee,paid_amount').eq('family_id', fid),
     sb.from('users').select('id,full_name,role').eq('family_id', fid).eq('is_active', true),
@@ -456,22 +456,32 @@ async function _buildContext() {
   const farmingProjectIds = (projects || []).filter((project) => project.project_type === 'farming').map((project) => project.id);
   const [{ data: farmOutputs }, { data: farmInputs }, { data: activities }, { data: livestock }] = await Promise.all([
     farmingProjectIds.length
-      ? sb.from('farm_outputs').select('project_id,usage_type,total_value,quantity,output_name').in('project_id', farmingProjectIds)
+      ? sb.from('farm_outputs').select('project_id,usage_type,total_value,quantity,output_category').in('project_id', farmingProjectIds)
       : Promise.resolve({ data: [] }),
     farmingProjectIds.length
-      ? sb.from('farm_inputs').select('project_id,quantity,cost_per_unit,input_name').in('project_id', farmingProjectIds)
+      ? sb.from('farm_inputs').select('project_id,quantity,cost_per_unit,name').in('project_id', farmingProjectIds)
       : Promise.resolve({ data: [] }),
     farmingProjectIds.length
       ? sb.from('project_activities').select('project_id,cost,description').in('project_id', farmingProjectIds)
       : Promise.resolve({ data: [] }),
     farmingProjectIds.length
-      ? sb.from('livestock').select('project_id,count,animal_type').in('project_id', farmingProjectIds)
+      ? sb.from('livestock').select('id,project_id,count,animal_type').in('project_id', farmingProjectIds)
       : Promise.resolve({ data: [] }),
   ]);
+  const livestockIds = (livestock || []).map((item) => item.id).filter(Boolean);
+  const { data: livestockEventsRaw } = livestockIds.length
+    ? await sb.from('livestock_events').select('livestock_id,cost').in('livestock_id', livestockIds)
+    : { data: [] };
+  const livestockProjectById = Object.fromEntries((livestock || []).map((item) => [item.id, item.project_id]));
+  const livestockEvents = (livestockEventsRaw || []).map((event) => ({
+    ...event,
+    project_id: livestockProjectById[event.livestock_id] || null,
+  }));
 
   const membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
-  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount), 0);
-  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount), 0);
+  const cashSummary = FinanceCore.buildCashSummary(contrib || [], exp || []);
+  const totalContributions = cashSummary.total_contributions;
+  const totalExpenses = cashSummary.total_expenses;
   const expenseByCategory = {};
   (exp || []).forEach((item) => {
     const key = item.category || 'Other';
@@ -507,11 +517,15 @@ async function _buildContext() {
     .sort((a, b) => b.target - a.target)
     .slice(0, 3);
   const activeAssets = (assets || []).filter((asset) => (asset.status || 'active') === 'active');
-  const soldOutputs = (farmOutputs || []).filter((output) => output.usage_type === 'sold');
-  const storedOutputs = (farmOutputs || []).filter((output) => output.usage_type === 'stored');
-  const consumedOutputs = (farmOutputs || []).filter((output) => output.usage_type === 'consumed');
-  const farmInputCost = (farmInputs || []).reduce((sum, input) => sum + (Number(input.quantity || 0) * Number(input.cost_per_unit || 0)), 0);
-  const farmActivityCost = (activities || []).reduce((sum, activity) => sum + Number(activity.cost || 0), 0);
+  const vendorLedger = FinanceCore.buildVendorLedger(vendors || [], exp || [], tasks || []);
+  const farmSummary = FinanceCore.buildFarmSummary(
+    projects || [],
+    farmOutputs || [],
+    farmInputs || [],
+    activities || [],
+    livestockEvents || [],
+    exp || [],
+  );
   const outstandingTotal = (fees || []).reduce((sum, fee) => sum + Math.max(0, Number(fee.total_fee || 0) - Number(fee.paid_amount || 0)), 0);
 
   return {
@@ -523,7 +537,7 @@ async function _buildContext() {
     finances: {
       totalContributions,
       totalExpenses,
-      netBalance: totalContributions - totalExpenses,
+      netBalance: cashSummary.balance,
       topContributors: Object.entries(contributorTotals)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -595,15 +609,14 @@ async function _buildContext() {
     },
     vendors: {
       trackedCount: (vendors || []).length,
-      totalPaid: (vendors || []).reduce((sum, vendor) => sum + Number(vendor.total_paid || 0), 0),
-      topVendors: (vendors || [])
+      totalPaid: vendorLedger.totalPaid,
+      topVendors: vendorLedger.topVendors
         .map((vendor) => ({
           name: vendor.name,
-          totalPaid: Number(vendor.total_paid || 0),
-          totalJobs: Number(vendor.total_jobs || 0),
-        }))
-        .sort((a, b) => b.totalPaid - a.totalPaid)
-        .slice(0, 5),
+          totalPaid: Number(vendor.ledger_total_paid || 0),
+          totalJobs: Number(vendor.ledger_total_jobs || 0),
+          expenseRecords: Number(vendor.expense_record_count || 0),
+        })),
     },
     assets: {
       activeCount: activeAssets.length,
@@ -622,17 +635,13 @@ async function _buildContext() {
     },
     farming: {
       projectCount: farmingProjectIds.length,
-      salesValue: soldOutputs.reduce((sum, output) => sum + Number(output.total_value || 0), 0),
-      storedQuantity: storedOutputs.reduce((sum, output) => sum + Number(output.quantity || 0), 0),
-      consumedQuantity: consumedOutputs.reduce((sum, output) => sum + Number(output.quantity || 0), 0),
-      totalCost: farmInputCost + farmActivityCost,
+      salesValue: farmSummary.salesValue,
+      storedQuantity: farmSummary.storedQuantity,
+      consumedQuantity: farmSummary.consumedQuantity,
+      operationalCost: farmSummary.operationalCost,
+      cashSpend: farmSummary.cashSpend,
       livestockHeads: (livestock || []).reduce((sum, item) => sum + Number(item.count || 0), 0),
-      topOutputs: (farmOutputs || []).slice(0, 5).map((output) => ({
-        output_name: output.output_name,
-        usage_type: output.usage_type,
-        quantity: Number(output.quantity || 0),
-        total_value: Number(output.total_value || 0),
-      })),
+      topOutputs: farmSummary.topOutputs,
     },
     schoolFees: {
       outstandingTotal,

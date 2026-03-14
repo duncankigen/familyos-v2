@@ -5,6 +5,7 @@
 
 const DirectoryPage = {
   vendors: [],
+  vendorLedgerRows: [],
   taskCountByVendor: {},
   expenseCountByVendor: {},
   search: '',
@@ -40,12 +41,6 @@ function vendorForm(vendor = null) {
       <div class="form-group"><label class="form-label">Rating (1-5)</label>
         <input id="v-rating" class="form-input" type="number" min="1" max="5" placeholder="Optional" value="${vendor?.rating ?? ''}"/></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Total Jobs</label>
-        <input id="v-jobs" class="form-input" type="number" min="0" placeholder="0" value="${vendor?.total_jobs ?? ''}"/></div>
-      <div class="form-group"><label class="form-label">Total Paid (KES)</label>
-        <input id="v-paid" class="form-input" type="number" min="0" placeholder="0" value="${vendor?.total_paid ?? ''}"/></div>
-    </div>
     <div class="form-group"><label class="form-label">Notes</label>
       <textarea id="v-notes" class="form-textarea" placeholder="Trusted supplier, payment terms, work quality...">${escapeHtml(vendor?.notes || '')}</textarea></div>
     <p id="vendor-err" style="color:var(--danger);font-size:12px;display:none;"></p>
@@ -70,19 +65,13 @@ async function renderDirectory() {
   }
 
   DirectoryPage.vendors = vendors || [];
-  DirectoryPage.taskCountByVendor = {};
-  DirectoryPage.expenseCountByVendor = {};
-  (tasks || []).forEach((task) => {
-    if (!task.assigned_vendor) return;
-    DirectoryPage.taskCountByVendor[task.assigned_vendor] = (DirectoryPage.taskCountByVendor[task.assigned_vendor] || 0) + 1;
-  });
-  (expenses || []).forEach((expense) => {
-    if (!expense.vendor_id) return;
-    DirectoryPage.expenseCountByVendor[expense.vendor_id] = (DirectoryPage.expenseCountByVendor[expense.vendor_id] || 0) + 1;
-  });
+  const vendorLedger = FinanceCore.buildVendorLedger(vendors || [], expenses || [], tasks || []);
+  DirectoryPage.vendorLedgerRows = vendorLedger.rows;
+  DirectoryPage.taskCountByVendor = vendorLedger.taskCountByVendor;
+  DirectoryPage.expenseCountByVendor = vendorLedger.expenseCountByVendor;
 
   const grouped = {};
-  DirectoryPage.vendors
+  DirectoryPage.vendorLedgerRows
     .filter((vendor) => {
       const query = DirectoryPage.search.trim().toLowerCase();
       if (!query) return true;
@@ -140,7 +129,7 @@ async function renderDirectory() {
                 ${vendor.phone ? `<div style="font-size:12px;color:var(--text2);">${escapeHtml(vendor.phone)}</div>` : ''}
                 ${vendor.email ? `<div style="font-size:12px;color:var(--text2);">${escapeHtml(vendor.email)}</div>` : ''}
                 ${(vendor.rate || vendor.rate_unit) ? `<div style="font-size:12px;color:var(--text2);">Rate: ${vendor.rate ? `KES ${fmt(vendor.rate)}` : '-'}${vendor.rate_unit ? ` / ${escapeHtml(vendor.rate_unit)}` : ''}</div>` : ''}
-                ${(vendor.total_jobs || vendor.total_paid) ? `<div style="font-size:12px;color:var(--text2);">Jobs: ${fmt(vendor.total_jobs || 0)} | Paid: KES ${fmt(vendor.total_paid || 0)}</div>` : ''}
+                ${(vendor.ledger_total_jobs || vendor.ledger_total_paid) ? `<div style="font-size:12px;color:var(--text2);">Linked tasks: ${fmt(vendor.ledger_total_jobs || 0)} | Paid from ledger: KES ${fmt(vendor.ledger_total_paid || 0)}</div>` : ''}
                 ${DirectoryPage.taskCountByVendor[vendor.id] || DirectoryPage.expenseCountByVendor[vendor.id] ? `
                   <div style="font-size:12px;color:var(--text2);">
                     Linked tasks: ${fmt(DirectoryPage.taskCountByVendor[vendor.id] || 0)} | Expense records: ${fmt(DirectoryPage.expenseCountByVendor[vendor.id] || 0)}
@@ -199,8 +188,6 @@ async function saveVendor(vendorId = null) {
     rate: parseFloat(document.getElementById('v-rate')?.value || '') || null,
     rate_unit: document.getElementById('v-rate-unit')?.value.trim() || null,
     rating: parseInt(document.getElementById('v-rating')?.value || '', 10) || null,
-    total_jobs: parseInt(document.getElementById('v-jobs')?.value || '', 10) || 0,
-    total_paid: parseFloat(document.getElementById('v-paid')?.value || '') || 0,
     notes: document.getElementById('v-notes')?.value.trim() || null,
   };
 
