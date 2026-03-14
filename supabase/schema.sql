@@ -173,11 +173,13 @@ create table if not exists contributions (
   id uuid primary key default uuid_generate_v4(),
   family_id uuid references families(id) on delete cascade,
   user_id uuid references users(id),
+  recorded_by uuid references users(id) on delete set null,
   amount numeric not null check (amount > 0),
   contribution_type text not null default 'general',
   reference text,
   notes text,
   created_at timestamptz default now(),
+  updated_at timestamptz default now(),
   constraint contrib_type_check check (contribution_type in ('project','fees','emergency','general'))
 );
 
@@ -193,6 +195,7 @@ create table if not exists expenses (
   receipt_url text,
   created_by uuid references users(id),
   created_at timestamptz default now(),
+  updated_at timestamptz default now(),
   constraint expense_cat_check check (category in ('materials','labor','transport','equipment','services','other'))
 );
 
@@ -406,6 +409,34 @@ create table if not exists vendors (
   total_paid numeric default 0,
   created_at timestamptz default now()
 );
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'expenses_project_id_fkey'
+      and conrelid = 'public.expenses'::regclass
+  ) then
+    alter table public.expenses
+      add constraint expenses_project_id_fkey
+      foreign key (project_id) references public.projects(id) on delete set null;
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'expenses_vendor_id_fkey'
+      and conrelid = 'public.expenses'::regclass
+  ) then
+    alter table public.expenses
+      add constraint expenses_vendor_id_fkey
+      foreign key (vendor_id) references public.vendors(id) on delete set null;
+  end if;
+end $$;
 
 -- ============================================================
 -- STEP 10: ASSETS REGISTRY
@@ -1014,9 +1045,14 @@ create policy "members record own contributions"
 on contributions for insert
 with check (family_id = get_my_family_id() and user_id = auth.uid());
 
+create policy "finance team records contributions"
+on contributions for insert
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+
 create policy "treasurer manages contributions"
-on contributions for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+on contributions for update
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- EXPENSES: all family members can read; treasurer/project_manager can write
 create policy "family reads expenses"
@@ -1029,7 +1065,8 @@ with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasu
 
 create policy "authorized members update expenses"
 on expenses for update
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- PAYMENT ACCOUNTS: read all family; admin/treasurer manage
 create policy "family reads payment accounts"

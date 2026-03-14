@@ -4,18 +4,69 @@
  * Emergency fund: balance vs target, disbursement history.
  */
 
-async function renderEmergency() {
-  setTopbar('Emergency Fund', `<button class="btn btn-primary btn-sm" onclick="openAddDisbursement()">+ Record Disbursement</button>`);
-  const sb = DB.client;
+function canManageEmergencyFund() {
+  return ['admin', 'treasurer'].includes(State.currentProfile?.role);
+}
 
-  const [{ data: ef }, { data: disb }] = await Promise.all([
-    sb.from('emergency_fund').select('*').eq('family_id', State.fid).single(),
+async function getEmergencyFundRecord() {
+  const { data, error } = await DB.client
+    .from('emergency_fund')
+    .select('*')
+    .eq('family_id', State.fid)
+    .maybeSingle();
+
+  return { data, error };
+}
+
+async function upsertEmergencyFund(values) {
+  const { data: existing, error: existingError } = await getEmergencyFundRecord();
+  if (existingError) return { error: existingError };
+
+  if (existing?.id) {
+    return DB.client
+      .from('emergency_fund')
+      .update({ ...values, updated_at: new Date().toISOString() })
+      .eq('id', existing.id);
+  }
+
+  return DB.client
+    .from('emergency_fund')
+    .insert({
+      family_id: State.fid,
+      ...values,
+      updated_at: new Date().toISOString(),
+    });
+}
+
+async function renderEmergency() {
+  setTopbar(
+    'Emergency Fund',
+    canManageEmergencyFund()
+      ? `<button class="btn btn-primary btn-sm" onclick="openAddDisbursement()">+ Record Disbursement</button>`
+      : ''
+  );
+
+  const sb = DB.client;
+  const [{ data: ef, error: fundError }, { data: disb, error: disbError }] = await Promise.all([
+    sb.from('emergency_fund').select('*').eq('family_id', State.fid).maybeSingle(),
     sb.from('emergency_disbursements').select('*').eq('family_id', State.fid).order('created_at', { ascending: false }),
   ]);
 
+  if (fundError || disbError) {
+    console.error('[Emergency] Failed to load:', fundError || disbError);
+    document.getElementById('page-content').innerHTML = `
+      <div class="content">
+        <div class="card">${empty('Unable to load the emergency fund right now')}</div>
+      </div>`;
+    return;
+  }
+
   const cur = ef?.current_amount || 0;
-  const tar = ef?.target_amount  || 300000;
-  const pct = Math.min(100, Math.round(cur / tar * 100));
+  const tar = ef?.target_amount || 300000;
+  const pct = tar > 0 ? Math.min(100, Math.round(cur / tar * 100)) : 0;
+  const totalDisbursed = (disb || [])
+    .filter((item) => item.status === 'disbursed')
+    .reduce((sum, item) => sum + Number(item.amount), 0);
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -27,9 +78,7 @@ async function renderEmergency() {
         <div class="metric-card"><div class="metric-label">Progress</div>
           <div class="metric-value" style="color:var(--warning);">${pct}%</div></div>
         <div class="metric-card"><div class="metric-label">Total Disbursed</div>
-          <div class="metric-value" style="color:var(--danger);">KES ${fmt(
-            (disb || []).filter(d => d.status === 'disbursed').reduce((a, b) => a + Number(b.amount), 0)
-          )}</div></div>
+          <div class="metric-value" style="color:var(--danger);">KES ${fmt(totalDisbursed)}</div></div>
       </div>
 
       <div class="card mb16">
@@ -41,10 +90,11 @@ async function renderEmergency() {
         <div class="progress" style="height:10px;">
           <div class="progress-fill" style="width:${pct}%;background:var(--warning);"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn btn-sm btn-primary" onclick="openUpdateFund()">Update Balance</button>
-          <button class="btn btn-sm" onclick="openSetTarget()">Set Target</button>
-        </div>
+        ${canManageEmergencyFund() ? `
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn btn-sm btn-primary" onclick="openUpdateFund()">Update Balance</button>
+            <button class="btn btn-sm" onclick="openSetTarget()">Set Target</button>
+          </div>` : ''}
       </div>
 
       <div class="card">
@@ -53,13 +103,13 @@ async function renderEmergency() {
           <table>
             <thead><tr><th>Event</th><th>Member</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
             <tbody>
-              ${(disb || []).map(d => `
+              ${(disb || []).map((item) => `
                 <tr>
-                  <td>${d.event_description}</td>
-                  <td>${d.member_name || '—'}</td>
-                  <td><strong>KES ${fmt(d.amount)}</strong></td>
-                  <td>${statusBadge(d.status)}</td>
-                  <td style="font-size:12px;color:var(--text3);">${fmtDate(d.disbursed_at || d.created_at)}</td>
+                  <td>${item.event_description}</td>
+                  <td>${item.member_name || '—'}</td>
+                  <td><strong>KES ${fmt(item.amount)}</strong></td>
+                  <td>${statusBadge(item.status)}</td>
+                  <td style="font-size:12px;color:var(--text3);">${fmtDate(item.disbursed_at || item.created_at)}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -70,41 +120,77 @@ async function renderEmergency() {
 }
 
 function openUpdateFund() {
+  if (!canManageEmergencyFund()) return;
+
   Modal.open('Update Emergency Fund Balance', `
     <div class="form-group"><label class="form-label">New Balance (KES)</label>
       <input id="ef-bal" class="form-input" type="number" placeholder="180000"/></div>
-  `, [{ label: 'Update', cls: 'btn-primary', fn: async () => {
-    const amount = parseFloat(document.getElementById('ef-bal').value);
-    if (isNaN(amount)) return;
-    const { data: existing } = await DB.client.from('emergency_fund').select('id').eq('family_id', State.fid).single();
-    if (existing) {
-      await DB.client.from('emergency_fund').update({ current_amount: amount, updated_at: new Date().toISOString() }).eq('id', existing.id);
-    } else {
-      await DB.client.from('emergency_fund').insert({ family_id: State.fid, current_amount: amount });
-    }
-    Modal.close();
-    renderPage('emergency');
-  }}]);
+    <p id="emergency-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{
+    label: 'Update',
+    cls: 'btn-primary',
+    fn: saveEmergencyBalance,
+  }]);
+}
+
+async function saveEmergencyBalance() {
+  hideErr('emergency-err');
+
+  const amount = parseFloat(document.getElementById('ef-bal')?.value || '');
+  if (isNaN(amount) || amount < 0) {
+    showErr('emergency-err', 'Enter a valid balance.');
+    return;
+  }
+
+  const { error } = await upsertEmergencyFund({ current_amount: amount });
+  if (error) {
+    showErr('emergency-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('emergency');
 }
 
 function openSetTarget() {
+  if (!canManageEmergencyFund()) return;
+
   Modal.open('Set Emergency Fund Target', `
     <div class="form-group"><label class="form-label">Target Amount (KES)</label>
       <input id="ef-target" class="form-input" type="number" placeholder="300000"/></div>
-  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    const target = parseFloat(document.getElementById('ef-target').value);
-    if (!target) return;
-    const { data: existing } = await DB.client.from('emergency_fund').select('id').eq('family_id', State.fid).single();
-    if (existing) await DB.client.from('emergency_fund').update({ target_amount: target }).eq('id', existing.id);
-    Modal.close();
-    renderPage('emergency');
-  }}]);
+    <p id="emergency-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: saveEmergencyTarget,
+  }]);
+}
+
+async function saveEmergencyTarget() {
+  hideErr('emergency-err');
+
+  const target = parseFloat(document.getElementById('ef-target')?.value || '');
+  if (isNaN(target) || target <= 0) {
+    showErr('emergency-err', 'Enter a valid target greater than zero.');
+    return;
+  }
+
+  const { error } = await upsertEmergencyFund({ target_amount: target });
+  if (error) {
+    showErr('emergency-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('emergency');
 }
 
 function openAddDisbursement() {
+  if (!canManageEmergencyFund()) return;
+
   Modal.open('Record Disbursement', `
     <div class="form-group"><label class="form-label">Event / Reason</label>
-      <input id="d-event"  class="form-input" placeholder="Medical emergency — John"/></div>
+      <input id="d-event" class="form-input" placeholder="Medical emergency - John"/></div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Member Affected</label>
         <input id="d-member" class="form-input" placeholder="John Otieno"/></div>
@@ -122,20 +208,46 @@ function openAddDisbursement() {
       <div class="form-group"><label class="form-label">Date</label>
         <input id="d-date" class="form-input" type="date"/></div>
     </div>
-  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    const amount = parseFloat(document.getElementById('d-amount').value);
-    if (!amount) return;
-    await DB.client.from('emergency_disbursements').insert({
-      family_id:         State.fid,
-      event_description: document.getElementById('d-event').value,
-      member_name:       document.getElementById('d-member').value,
-      amount,
-      status:            document.getElementById('d-status').value,
-      disbursed_at:      document.getElementById('d-date').value || null,
-    });
-    Modal.close();
-    renderPage('emergency');
-  }}]);
+    <p id="emergency-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: saveEmergencyDisbursement,
+  }]);
+}
+
+async function saveEmergencyDisbursement() {
+  hideErr('emergency-err');
+
+  const eventDescription = document.getElementById('d-event')?.value.trim() || '';
+  const amount = parseFloat(document.getElementById('d-amount')?.value || '');
+
+  if (!eventDescription) {
+    showErr('emergency-err', 'Event or reason is required.');
+    return;
+  }
+
+  if (!amount || amount <= 0) {
+    showErr('emergency-err', 'Enter a valid amount greater than zero.');
+    return;
+  }
+
+  const { error } = await DB.client.from('emergency_disbursements').insert({
+    family_id: State.fid,
+    event_description: eventDescription,
+    member_name: document.getElementById('d-member')?.value.trim() || null,
+    amount,
+    status: document.getElementById('d-status')?.value || 'pending',
+    disbursed_at: document.getElementById('d-date')?.value || null,
+  });
+
+  if (error) {
+    showErr('emergency-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('emergency');
 }
 
 Router.register('emergency', renderEmergency);

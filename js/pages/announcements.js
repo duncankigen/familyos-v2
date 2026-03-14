@@ -42,6 +42,30 @@ const AnnouncementsPage = {
   },
 };
 
+async function attachAnnouncementAuthors(items) {
+  const announcements = items || [];
+  const authorIds = [...new Set(announcements.map((item) => item.created_by).filter(Boolean))];
+  if (!authorIds.length) {
+    return announcements.map((item) => ({ ...item, author: null }));
+  }
+
+  const { data: authors, error } = await DB.client
+    .from('users')
+    .select('id,full_name')
+    .in('id', authorIds);
+
+  if (error) {
+    console.warn('[Announcements] Failed to load authors:', error);
+    return announcements.map((item) => ({ ...item, author: null }));
+  }
+
+  const authorsById = Object.fromEntries((authors || []).map((author) => [author.id, author]));
+  return announcements.map((item) => ({
+    ...item,
+    author: item.created_by ? (authorsById[item.created_by] || null) : null,
+  }));
+}
+
 function announcementErrorMessage(error) {
   const message = error?.message || 'Unable to load announcements right now.';
   if (
@@ -186,8 +210,7 @@ async function renderAnnouncements() {
       created_at,
       updated_at,
       is_pinned,
-      is_archived,
-      author:users!announcements_created_by_fkey(full_name)
+      is_archived
     `)
     .eq('family_id', State.fid)
     .eq('is_archived', false)
@@ -202,7 +225,7 @@ async function renderAnnouncements() {
     return;
   }
 
-  AnnouncementsPage.items = data || [];
+  AnnouncementsPage.items = await attachAnnouncementAuthors(data || []);
   renderAnnouncementsView();
   markAnnouncementsSeen();
 }

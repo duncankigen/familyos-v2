@@ -4,16 +4,99 @@
  * Record and view all family contributions.
  */
 
+const ContributionsPage = {
+  items: [],
+  members: [],
+  memberById: {},
+};
+
+function canManageContributions() {
+  return ['admin', 'treasurer'].includes(State.currentProfile?.role);
+}
+
+function contributionInputValue(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function contributionMemberName(userId) {
+  return ContributionsPage.memberById[userId]?.full_name || 'Unknown';
+}
+
+function contributionForm(contribution = null) {
+  const canManage = canManageContributions();
+  const selectedUserId = contribution?.user_id || State.uid;
+
+  return `
+    ${canManage ? `
+      <div class="form-group">
+        <label class="form-label">Member</label>
+        <select id="c-user" class="form-select">
+          ${ContributionsPage.members.map((member) => `
+            <option value="${member.id}" ${selectedUserId === member.id ? 'selected' : ''}>${member.full_name}</option>
+          `).join('')}
+        </select>
+      </div>` : ''}
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Amount (KES)</label>
+        <input id="c-amount" class="form-input" type="number" placeholder="5000" value="${contributionInputValue(contribution?.amount)}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select id="c-type" class="form-select">
+          <option value="general" ${contribution?.contribution_type === 'general' || !contribution ? 'selected' : ''}>General</option>
+          <option value="project" ${contribution?.contribution_type === 'project' ? 'selected' : ''}>Project</option>
+          <option value="fees" ${contribution?.contribution_type === 'fees' ? 'selected' : ''}>School Fees</option>
+          <option value="emergency" ${contribution?.contribution_type === 'emergency' ? 'selected' : ''}>Emergency</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reference (optional)</label>
+      <input id="c-ref" class="form-input" placeholder="e.g. Monthly contribution" value="${contributionInputValue(contribution?.reference)}"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <input id="c-notes" class="form-input" placeholder="Additional notes" value="${contributionInputValue(contribution?.notes)}"/>
+    </div>
+    <p id="contrib-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
 async function renderContributions() {
   setTopbar('Contributions', `<button class="btn btn-primary btn-sm" onclick="openAddContrib()">+ Record</button>`);
-  const { data } = await DB.client
-    .from('contributions')
-    .select('*,users(full_name)')
-    .eq('family_id', State.fid)
-    .order('created_at', { ascending: false })
-    .limit(100);
 
-  const total = (data || []).reduce((a, b) => a + Number(b.amount), 0);
+  const [{ data, error }, { data: members, error: membersError }] = await Promise.all([
+    DB.client
+      .from('contributions')
+      .select('id,family_id,user_id,amount,contribution_type,reference,notes,created_at')
+      .eq('family_id', State.fid)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    DB.client
+      .from('users')
+      .select('id,full_name')
+      .eq('family_id', State.fid)
+      .order('full_name'),
+  ]);
+
+  if (error || membersError) {
+    console.error('[Contributions] Failed to load:', error || membersError);
+    document.getElementById('page-content').innerHTML = `
+      <div class="content">
+        <div class="card">${empty('Unable to load contributions right now')}</div>
+      </div>`;
+    return;
+  }
+
+  ContributionsPage.items = data || [];
+  ContributionsPage.members = members || [];
+  ContributionsPage.memberById = Object.fromEntries((ContributionsPage.members).map((member) => [member.id, member]));
+
+  const total = ContributionsPage.items.reduce((sum, item) => sum + Number(item.amount), 0);
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -24,71 +107,98 @@ async function renderContributions() {
         </div>
         <div class="metric-card">
           <div class="metric-label">Records</div>
-          <div class="metric-value">${(data || []).length}</div>
+          <div class="metric-value">${ContributionsPage.items.length}</div>
         </div>
       </div>
       <div class="card">
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Member</th><th>Amount</th><th>Type</th><th>Reference</th><th>Date</th></tr>
+              <tr><th>Member</th><th>Amount</th><th>Type</th><th>Reference</th><th>Date</th>${canManageContributions() ? '<th>Action</th>' : ''}</tr>
             </thead>
             <tbody>
-              ${(data || []).map(c => `
+              ${ContributionsPage.items.map((contribution) => `
                 <tr>
-                  <td><div class="flex gap8">${avatarHtml(c.users?.full_name || '?', 'av-sm')} ${c.users?.full_name || 'Unknown'}</div></td>
-                  <td><strong style="color:var(--success);">KES ${fmt(c.amount)}</strong></td>
-                  <td><span class="badge b-blue">${c.contribution_type}</span></td>
-                  <td style="color:var(--text2);font-size:12px;">${c.reference || '—'}</td>
-                  <td style="color:var(--text3);font-size:12px;">${fmtDate(c.created_at)}</td>
+                  <td><div class="flex gap8">${avatarHtml(contributionMemberName(contribution.user_id), 'av-sm')} ${contributionMemberName(contribution.user_id)}</div></td>
+                  <td><strong style="color:var(--success);">KES ${fmt(contribution.amount)}</strong></td>
+                  <td><span class="badge b-blue">${contribution.contribution_type}</span></td>
+                  <td style="color:var(--text2);font-size:12px;">${contribution.reference || '—'}</td>
+                  <td style="color:var(--text3);font-size:12px;">${fmtDate(contribution.created_at)}</td>
+                  ${canManageContributions() ? `<td><button class="btn btn-sm" onclick="openEditContrib('${contribution.id}')">Manage</button></td>` : ''}
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>
-        ${!(data || []).length ? empty('No contributions recorded yet') : ''}
+        ${!ContributionsPage.items.length ? empty('No contributions recorded yet') : ''}
       </div>
     </div>`;
 }
 
 function openAddContrib() {
-  Modal.open('Record Contribution', `
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Amount (KES)</label>
-        <input id="c-amount" class="form-input" type="number" placeholder="5000"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Type</label>
-        <select id="c-type" class="form-select">
-          <option value="general">General</option>
-          <option value="project">Project</option>
-          <option value="fees">School Fees</option>
-          <option value="emergency">Emergency</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Reference (optional)</label>
-      <input id="c-ref" class="form-input" placeholder="e.g. Monthly contribution"/>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <input id="c-notes" class="form-input" placeholder="Additional notes"/>
-    </div>
-  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    const amount = parseFloat(document.getElementById('c-amount').value);
-    if (!amount || amount <= 0) return;
-    await DB.client.from('contributions').insert({
-      family_id:         State.fid,
-      user_id:           State.uid,
-      amount,
-      contribution_type: document.getElementById('c-type').value,
-      reference:         document.getElementById('c-ref').value,
-      notes:             document.getElementById('c-notes').value,
-    });
-    Modal.close();
-    renderPage('contributions');
-  }}]);
+  Modal.open('Record Contribution', contributionForm(), [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: () => saveContribution(),
+  }]);
+}
+
+function openEditContrib(contributionId) {
+  if (!canManageContributions()) return;
+
+  const contribution = ContributionsPage.items.find((item) => item.id === contributionId);
+  if (!contribution) return;
+
+  Modal.open('Manage Contribution', contributionForm(contribution), [{
+    label: 'Save Changes',
+    cls: 'btn-primary',
+    fn: () => saveContribution(contribution.id),
+  }]);
+}
+
+async function saveContribution(contributionId = null) {
+  hideErr('contrib-err');
+
+  const amount = parseFloat(document.getElementById('c-amount')?.value || '');
+  if (!amount || amount <= 0) {
+    showErr('contrib-err', 'Enter a valid amount greater than zero.');
+    return;
+  }
+
+  const canManage = canManageContributions();
+  const userId = canManage
+    ? (document.getElementById('c-user')?.value || State.uid)
+    : State.uid;
+
+  const payload = {
+    user_id: userId,
+    amount,
+    contribution_type: document.getElementById('c-type')?.value || 'general',
+    reference: document.getElementById('c-ref')?.value.trim() || null,
+    notes: document.getElementById('c-notes')?.value.trim() || null,
+  };
+
+  let error = null;
+  if (contributionId) {
+    ({ error } = await DB.client
+      .from('contributions')
+      .update(payload)
+      .eq('id', contributionId));
+  } else {
+    ({ error } = await DB.client
+      .from('contributions')
+      .insert({
+        family_id: State.fid,
+        ...payload,
+      }));
+  }
+
+  if (error) {
+    showErr('contrib-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('contributions');
 }
 
 Router.register('contributions', renderContributions);
