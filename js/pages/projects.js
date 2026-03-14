@@ -8,6 +8,7 @@ const ProjectsPage = {
   projects: [],
   membersById: {},
   leadersByProject: {},
+  projectMembers: [],
   detailStorageKey: 'fos_project_detail',
 };
 
@@ -62,6 +63,10 @@ function openProjectFarming(projectId) {
 function backToProjects() {
   rememberActiveProject('');
   nav('projects');
+}
+
+function canManageProjectTeam() {
+  return canManageProjects();
 }
 
 async function loadProjectOverviewData() {
@@ -219,6 +224,7 @@ async function renderProjectDetail() {
     ...row,
     member: ProjectsPage.membersById[row.user_id] || null,
   }));
+  ProjectsPage.projectMembers = teamRows;
   const leader = teamRows.find((row) => row.role === 'leader');
   const leaderName = leader?.member?.full_name || ProjectsPage.membersById[project.created_by]?.full_name || 'Unassigned';
   const totalSpent = (expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
@@ -294,7 +300,10 @@ async function renderProjectDetail() {
         </div>
 
         <div class="card">
-          <div class="card-title">Team</div>
+          <div class="flex-between mb8">
+            <div class="card-title" style="margin-bottom:0;">Team</div>
+            ${canManageProjectTeam() ? `<button class="btn btn-sm" onclick="openManageProjectTeam()">Manage Team</button>` : ''}
+          </div>
           ${(teamRows || []).map((row) => `
             <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
               <div>
@@ -344,6 +353,112 @@ async function renderProjectDetail() {
         </div>
       </div>
     </div>`;
+}
+
+function projectMemberForm(memberRow = null) {
+  const existingUserIds = new Set(ProjectsPage.projectMembers.map((row) => row.user_id));
+  return `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Member</label>
+        <select id="pm-user" class="form-select" ${memberRow ? 'disabled' : ''}>
+          <option value="">- Select -</option>
+          ${Object.values(ProjectsPage.membersById)
+            .filter((member) => memberRow || !existingUserIds.has(member.id))
+            .map((member) => `<option value="${member.id}" ${memberRow?.user_id === member.id ? 'selected' : ''}>${escapeHtml(member.full_name)}</option>`)
+            .join('')}
+        </select>
+        ${memberRow ? `<input id="pm-user-hidden" type="hidden" value="${memberRow.user_id}" />` : ''}
+      </div>
+      <div class="form-group"><label class="form-label">Role</label>
+        <select id="pm-role" class="form-select">
+          ${['leader', 'finance', 'worker', 'observer'].map((role) => `
+            <option value="${role}" ${memberRow?.role === role ? 'selected' : ''}>${role.charAt(0).toUpperCase() + role.slice(1)}</option>
+          `).join('')}
+        </select>
+      </div>
+    </div>
+    <p id="project-member-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
+function openManageProjectTeam() {
+  if (!canManageProjectTeam()) return;
+
+  Modal.open('Manage Project Team', `
+    <div class="flex-col">
+      ${ProjectsPage.projectMembers.map((row) => `
+        <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
+          <div>
+            <div style="font-size:13px;font-weight:600;">${escapeHtml(row.member?.full_name || 'Unknown member')}</div>
+            <div style="font-size:11px;color:var(--text3);text-transform:capitalize;">${escapeHtml(row.role || 'worker')}</div>
+          </div>
+          <button class="btn btn-sm" onclick="openProjectMemberEditor('${row.id}')">Manage</button>
+        </div>`).join('')}
+      ${!ProjectsPage.projectMembers.length ? empty('No team members added yet') : ''}
+    </div>
+  `, [{
+    label: 'Add Member',
+    cls: 'btn-primary',
+    fn: () => openProjectMemberEditor(),
+  }]);
+}
+
+function openProjectMemberEditor(projectMemberId = '') {
+  if (!canManageProjectTeam()) return;
+  const memberRow = projectMemberId ? ProjectsPage.projectMembers.find((row) => row.id === projectMemberId) : null;
+
+  Modal.open(memberRow ? 'Manage Team Member' : 'Add Team Member', projectMemberForm(memberRow), [
+    memberRow ? {
+      label: 'Remove',
+      cls: 'btn',
+      fn: async () => removeProjectMember(projectMemberId),
+    } : null,
+    {
+      label: 'Save',
+      cls: 'btn-primary',
+      fn: async () => saveProjectMember(projectMemberId),
+    },
+  ].filter(Boolean));
+}
+
+async function saveProjectMember(projectMemberId = '') {
+  hideErr('project-member-err');
+  const projectId = activeProjectId();
+  const userId = document.getElementById('pm-user-hidden')?.value || document.getElementById('pm-user')?.value || '';
+  if (!userId) {
+    showErr('project-member-err', 'Select a member.');
+    return;
+  }
+
+  const payload = {
+    project_id: projectId,
+    user_id: userId,
+    role: document.getElementById('pm-role')?.value || 'worker',
+  };
+
+  const query = projectMemberId
+    ? DB.client.from('project_members').update(payload).eq('id', projectMemberId)
+    : DB.client.from('project_members').insert(payload);
+
+  const { error } = await query;
+  if (error) {
+    showErr('project-member-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('project-detail');
+}
+
+async function removeProjectMember(projectMemberId) {
+  const { error } = await DB.client.from('project_members').delete().eq('id', projectMemberId);
+  if (error) {
+    showErr('project-member-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('project-detail');
 }
 
 async function openAddProject() {

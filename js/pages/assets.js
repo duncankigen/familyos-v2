@@ -5,6 +5,7 @@
 
 const AssetsPage = {
   membersById: {},
+  assets: [],
 };
 
 function canManageAssets() {
@@ -24,6 +25,43 @@ function assetTypeIcon(type) {
   }[type] || 'ASSET';
 }
 
+function assetForm(asset = null) {
+  return `
+    <div class="form-group"><label class="form-label">Asset Name</label>
+      <input id="a-name" class="form-input" placeholder="5-acre plot in Kitale" value="${escapeHtml(asset?.name || '')}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <select id="a-type" class="form-select">
+          ${['land', 'building', 'vehicle', 'tractor', 'livestock', 'equipment', 'investment', 'other'].map((value) => `
+            <option value="${value}" ${asset?.asset_type === value ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Location</label>
+        <input id="a-loc" class="form-input" placeholder="Kitale, Trans Nzoia" value="${escapeHtml(asset?.location || '')}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Estimated Value (KES)</label>
+        <input id="a-eval" class="form-input" type="number" placeholder="2500000" value="${asset?.estimated_value ?? ''}"/></div>
+      <div class="form-group"><label class="form-label">Monthly Income (KES)</label>
+        <input id="a-income" class="form-input" type="number" placeholder="0" value="${asset?.monthly_income ?? ''}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Manager</label>
+        <select id="a-mgr" class="form-select">
+          <option value="">- None -</option>
+          ${Object.values(AssetsPage.membersById).map((member) => `
+            <option value="${member.id}" ${asset?.manager_id === member.id ? 'selected' : ''}>${escapeHtml(member.full_name)}</option>
+          `).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Purchase Date</label>
+        <input id="a-date" class="form-input" type="date" value="${asset?.purchase_date || ''}"/></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label>
+      <textarea id="a-notes" class="form-textarea" placeholder="Registration, title deed, or management details...">${escapeHtml(asset?.notes || '')}</textarea></div>
+    <p id="asset-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
 async function renderAssets() {
   setTopbar('Assets', canManageAssets() ? `<button class="btn btn-primary btn-sm" onclick="openAddAsset()">+ Add Asset</button>` : '');
 
@@ -41,32 +79,33 @@ async function renderAssets() {
     return;
   }
 
+  AssetsPage.assets = assets || [];
   AssetsPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
 
-  const assetRows = assets || [];
-  const totalValue = assetRows.reduce((sum, asset) => sum + Number(asset.estimated_value || 0), 0);
+  const totalValue = AssetsPage.assets.reduce((sum, asset) => sum + Number(asset.estimated_value || 0), 0);
+  const incomeAssets = AssetsPage.assets.filter((asset) => Number(asset.monthly_income || 0) > 0).length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total Assets</div>
-          <div class="metric-value">${assetRows.length}</div></div>
+          <div class="metric-value">${AssetsPage.assets.length}</div></div>
         <div class="metric-card"><div class="metric-label">Total Value</div>
           <div class="metric-value" style="color:var(--accent);">KES ${fmt(totalValue)}</div></div>
         <div class="metric-card"><div class="metric-label">Land</div>
-          <div class="metric-value">${assetRows.filter((asset) => asset.asset_type === 'land').length}</div></div>
-        <div class="metric-card"><div class="metric-label">Vehicles</div>
-          <div class="metric-value">${assetRows.filter((asset) => asset.asset_type === 'vehicle').length}</div></div>
+          <div class="metric-value">${AssetsPage.assets.filter((asset) => asset.asset_type === 'land').length}</div></div>
+        <div class="metric-card"><div class="metric-label">Income Assets</div>
+          <div class="metric-value">${incomeAssets}</div></div>
       </div>
 
       <div class="card">
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Asset</th><th>Type</th><th>Location</th><th>Manager</th><th>Estimated Value</th><th>Monthly Income</th><th>Purchase Date</th></tr>
+              <tr><th>Asset</th><th>Type</th><th>Location</th><th>Manager</th><th>Estimated Value</th><th>Monthly Income</th><th>Purchase Date</th>${canManageAssets() ? '<th></th>' : ''}</tr>
             </thead>
             <tbody>
-              ${assetRows.map((asset) => `
+              ${AssetsPage.assets.map((asset) => `
                 <tr>
                   <td>
                     <div style="font-weight:600;">${assetTypeIcon(asset.asset_type)} ${escapeHtml(asset.name || '-')}</div>
@@ -78,88 +117,70 @@ async function renderAssets() {
                   <td>KES ${fmt(asset.estimated_value || 0)}</td>
                   <td style="color:var(--accent);font-weight:600;">${asset.monthly_income ? `KES ${fmt(asset.monthly_income)}` : '-'}</td>
                   <td>${asset.purchase_date ? fmtDate(asset.purchase_date) : '-'}</td>
+                  ${canManageAssets() ? `<td><button class="btn btn-sm" onclick="openEditAsset('${asset.id}')">Manage</button></td>` : ''}
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>
-        ${!assetRows.length ? empty('No assets recorded yet') : ''}
+        ${!AssetsPage.assets.length ? empty('No assets recorded yet') : ''}
       </div>
     </div>`;
 }
 
-async function openAddAsset() {
+function openAddAsset() {
   if (!canManageAssets()) return;
 
-  const { data: members, error } = await DB.client.from('users').select('id,full_name').eq('family_id', State.fid);
-  if (error) {
-    console.error('[Assets] Failed to load members:', error);
+  Modal.open('Add Asset', assetForm(), [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: async () => saveAsset(),
+  }]);
+}
+
+function openEditAsset(assetId) {
+  if (!canManageAssets()) return;
+  const asset = AssetsPage.assets.find((item) => item.id === assetId);
+  if (!asset) return;
+
+  Modal.open('Manage Asset', assetForm(asset), [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: async () => saveAsset(assetId),
+  }]);
+}
+
+async function saveAsset(assetId = null) {
+  hideErr('asset-err');
+  const name = document.getElementById('a-name')?.value.trim() || '';
+  if (!name) {
+    showErr('asset-err', 'Asset name is required.');
     return;
   }
 
-  Modal.open('Add Asset', `
-    <div class="form-group"><label class="form-label">Asset Name</label>
-      <input id="a-name" class="form-input" placeholder="5-acre plot in Kitale"/></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Type</label>
-        <select id="a-type" class="form-select">
-          <option value="land">Land</option>
-          <option value="building">Building</option>
-          <option value="vehicle">Vehicle</option>
-          <option value="tractor">Tractor</option>
-          <option value="livestock">Livestock</option>
-          <option value="equipment">Equipment</option>
-          <option value="investment">Investment</option>
-          <option value="other">Other</option>
-        </select></div>
-      <div class="form-group"><label class="form-label">Location</label>
-        <input id="a-loc" class="form-input" placeholder="Kitale, Trans Nzoia"/></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Estimated Value (KES)</label>
-        <input id="a-eval" class="form-input" type="number" placeholder="2500000"/></div>
-      <div class="form-group"><label class="form-label">Monthly Income (KES)</label>
-        <input id="a-income" class="form-input" type="number" placeholder="0"/></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Manager</label>
-        <select id="a-mgr" class="form-select">
-          <option value="">- None -</option>
-          ${(members || []).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
-        </select></div>
-      <div class="form-group"><label class="form-label">Purchase Date</label>
-        <input id="a-date" class="form-input" type="date"/></div>
-    </div>
-    <div class="form-group"><label class="form-label">Notes</label>
-      <textarea id="a-notes" class="form-textarea" placeholder="Registration, title deed, or management details..."></textarea></div>
-    <p id="asset-err" style="color:var(--danger);font-size:12px;display:none;"></p>
-  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    hideErr('asset-err');
-    const name = document.getElementById('a-name')?.value.trim() || '';
-    if (!name) {
-      showErr('asset-err', 'Asset name is required.');
-      return;
-    }
+  const payload = {
+    family_id: State.fid,
+    name,
+    asset_type: document.getElementById('a-type')?.value || 'other',
+    location: document.getElementById('a-loc')?.value.trim() || null,
+    estimated_value: parseFloat(document.getElementById('a-eval')?.value || '') || 0,
+    monthly_income: parseFloat(document.getElementById('a-income')?.value || '') || 0,
+    manager_id: document.getElementById('a-mgr')?.value || null,
+    purchase_date: document.getElementById('a-date')?.value || null,
+    notes: document.getElementById('a-notes')?.value.trim() || null,
+  };
 
-    const { error: insertError } = await DB.client.from('assets').insert({
-      family_id: State.fid,
-      name,
-      asset_type: document.getElementById('a-type')?.value || 'other',
-      location: document.getElementById('a-loc')?.value.trim() || null,
-      estimated_value: parseFloat(document.getElementById('a-eval')?.value || '') || 0,
-      monthly_income: parseFloat(document.getElementById('a-income')?.value || '') || 0,
-      manager_id: document.getElementById('a-mgr')?.value || null,
-      purchase_date: document.getElementById('a-date')?.value || null,
-      notes: document.getElementById('a-notes')?.value.trim() || null,
-    });
+  const query = assetId
+    ? DB.client.from('assets').update(payload).eq('id', assetId)
+    : DB.client.from('assets').insert(payload);
 
-    if (insertError) {
-      showErr('asset-err', insertError.message);
-      return;
-    }
+  const { error } = await query;
+  if (error) {
+    showErr('asset-err', error.message);
+    return;
+  }
 
-    Modal.close();
-    renderPage('assets');
-  }}]);
+  Modal.close();
+  renderPage('assets');
 }
 
 Router.register('assets', renderAssets);

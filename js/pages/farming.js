@@ -10,6 +10,7 @@ const FarmingPage = {
   membersById: {},
   crops: [],
   livestock: [],
+  livestockEvents: [],
   outputs: [],
   storageKey: 'fos_farming_project',
 };
@@ -237,6 +238,7 @@ async function renderFarming() {
   if (canManageFarmingRecords()) {
     actions.push(`<button class="btn btn-sm" onclick="openAddCrop()">+ Crop</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddLivestock()">+ Livestock</button>`);
+    actions.push(`<button class="btn btn-sm" onclick="openAddLivestockEvent()">+ Livestock Event</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddInput()">+ Input</button>`);
     actions.push(`<button class="btn btn-sm" onclick="openAddOutput()">+ Output</button>`);
   }
@@ -285,6 +287,9 @@ async function renderFarming() {
   const livestockQuery = projectIds.length
     ? sb.from('livestock').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
     : Promise.resolve({ data: [], error: null });
+  const livestockEventsQuery = projectIds.length
+    ? sb.from('livestock_events').select('*').order('event_date', { ascending: false }).limit(20)
+    : Promise.resolve({ data: [], error: null });
   const outputQuery = projectIds.length
     ? sb.from('farm_outputs').select('*').in('project_id', projectIds).order('output_date', { ascending: false }).limit(20)
     : Promise.resolve({ data: [], error: null });
@@ -294,11 +299,12 @@ async function renderFarming() {
     { data: activities, error: activityError },
     { data: inputs, error: inputError },
     { data: livestock, error: livestockError },
+    { data: livestockEvents, error: livestockEventsError },
     { data: outputs, error: outputError },
-  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery, outputQuery]);
+  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery, livestockEventsQuery, outputQuery]);
 
-  if (cropError || activityError || inputError || livestockError || outputError) {
-    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError || outputError);
+  if (cropError || activityError || inputError || livestockError || livestockEventsError || outputError) {
+    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError || livestockEventsError || outputError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load farm records right now')}</div>
@@ -311,10 +317,15 @@ async function renderFarming() {
   const farmActivities = activities || [];
   const farmInputs = inputs || [];
   const farmLivestock = livestock || [];
+  const farmLivestockEvents = (livestockEvents || []).filter((event) => {
+    const item = farmLivestock.find((row) => row.id === event.livestock_id);
+    return Boolean(item);
+  });
   const farmOutputs = outputs || [];
 
   FarmingPage.crops = farmCrops;
   FarmingPage.livestock = farmLivestock;
+  FarmingPage.livestockEvents = farmLivestockEvents;
   FarmingPage.outputs = farmOutputs;
 
   const now = new Date();
@@ -400,6 +411,30 @@ async function renderFarming() {
           ${!farmLivestock.length ? empty('No livestock recorded') : ''}
           ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddLivestock()">+ Add Livestock</button>` : ''}
         </div>
+      </div>
+
+      <div class="card mb16">
+        <div class="card-title">Livestock Events</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Event</th><th>Livestock</th><th>Date</th><th>Count Change</th><th>Cost</th></tr></thead>
+            <tbody>
+              ${farmLivestockEvents.map((event) => `
+                <tr>
+                  <td>
+                    <div style="font-weight:600;">${escapeHtml(farmingOutputCategoryLabel(event.event_type))}</div>
+                    <div style="font-size:11px;color:var(--text3);">${escapeHtml(event.description || '')}</div>
+                  </td>
+                  <td style="font-size:12px;">${escapeHtml(farmingLivestockName(event.livestock_id))}</td>
+                  <td style="font-size:12px;color:var(--text3);">${fmtDate(event.event_date)}</td>
+                  <td style="font-size:12px;">${event.count_change ? fmt(event.count_change) : '-'}</td>
+                  <td style="font-size:12px;">${event.cost ? `KES ${fmt(event.cost)}` : '-'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${!farmLivestockEvents.length ? empty('No livestock events recorded yet') : ''}
+        ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddLivestockEvent()">+ Add Event</button>` : ''}
       </div>
 
       <div class="g2 mb16">
@@ -854,6 +889,81 @@ async function openAddOutput() {
   }}]);
 
   refreshFarmOutputSourceField();
+}
+
+async function openAddLivestockEvent() {
+  if (!canManageFarmingRecords()) return;
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+
+  const selectedProjectId = getActiveFarmingProject();
+  const livestockOptions = FarmingPage.livestock
+    .filter((item) => !selectedProjectId || item.project_id === selectedProjectId)
+    .map((item) => `<option value="${item.id}">${escapeHtml(item.breed ? `${item.animal_type} - ${item.breed}` : item.animal_type)}</option>`)
+    .join('');
+
+  if (!livestockOptions) {
+    Modal.open('Livestock Required', `
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+        Add livestock to this farming project before recording livestock events.
+      </div>
+    `);
+    return;
+  }
+
+  Modal.open('Record Livestock Event', `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Livestock</label>
+        <select id="le-livestock" class="form-select">${livestockOptions}</select></div>
+      <div class="form-group"><label class="form-label">Event Type</label>
+        <select id="le-type" class="form-select">
+          ${['birth', 'vaccination', 'sale', 'death', 'breeding', 'treatment', 'other'].map((value) => `
+            <option value="${value}">${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label>
+        <input id="le-date" class="form-input" type="date" value="${new Date().toISOString().slice(0, 10)}"/></div>
+      <div class="form-group"><label class="form-label">Count Change</label>
+        <input id="le-count" class="form-input" type="number" placeholder="Optional"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Cost (KES)</label>
+        <input id="le-cost" class="form-input" type="number" placeholder="Optional"/></div>
+      <div class="form-group"><label class="form-label">Description</label>
+        <input id="le-desc" class="form-input" placeholder="Vaccinated 5 calves, sold 2 goats..." /></div>
+    </div>
+    <p id="livestock-event-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{
+    label: 'Save',
+    cls: 'btn-primary',
+    fn: async () => {
+      hideErr('livestock-event-err');
+      const description = document.getElementById('le-desc')?.value.trim() || '';
+      if (!description) {
+        showErr('livestock-event-err', 'Description is required.');
+        return;
+      }
+
+      const { error } = await DB.client.from('livestock_events').insert({
+        livestock_id: document.getElementById('le-livestock')?.value || null,
+        event_type: document.getElementById('le-type')?.value || 'other',
+        description,
+        event_date: document.getElementById('le-date')?.value || new Date().toISOString().slice(0, 10),
+        cost: parseFloat(document.getElementById('le-cost')?.value || '') || 0,
+        count_change: parseInt(document.getElementById('le-count')?.value || '', 10) || 0,
+      });
+
+      if (error) {
+        showErr('livestock-event-err', error.message);
+        return;
+      }
+
+      Modal.close();
+      renderPage('farming');
+    },
+  }]);
 }
 
 Router.register('farming', renderFarming);

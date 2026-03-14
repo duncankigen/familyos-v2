@@ -1,6 +1,5 @@
 /**
  * js/pages/tasks.js
- * ─────────────────────────────────────────────────────
  * Task tracker with status columns: pending / in_progress / completed.
  */
 
@@ -8,6 +7,8 @@ const TasksPage = {
   tasks: [],
   membersById: {},
   projectsById: {},
+  vendorsById: {},
+  vendors: [],
 };
 
 function canCreateTasks() {
@@ -22,18 +23,64 @@ function taskStatusGroup(task) {
   return task.status === 'overdue' ? 'pending' : task.status;
 }
 
+function taskVendorName(vendorId) {
+  return TasksPage.vendorsById[vendorId]?.name || null;
+}
+
+function taskForm(task = null) {
+  return `
+    <div class="form-group"><label class="form-label">Task Title</label>
+      <input id="t-title" class="form-input" placeholder="Plant maize in Block A" value="${escapeHtml(task?.title || '')}"/></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="t-desc" class="form-textarea" placeholder="Task details...">${escapeHtml(task?.description || '')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Assign To</label>
+        <select id="t-user" class="form-select">
+          <option value="">- Unassigned -</option>
+          ${Object.values(TasksPage.membersById).map((member) => `<option value="${member.id}" ${task?.assigned_user === member.id ? 'selected' : ''}>${escapeHtml(member.full_name)}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Vendor</label>
+        <select id="t-vendor" class="form-select">
+          <option value="">- None -</option>
+          ${TasksPage.vendors.map((vendor) => `<option value="${vendor.id}" ${task?.assigned_vendor === vendor.id ? 'selected' : ''}>${escapeHtml(vendor.name)}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Project</label>
+        <select id="t-proj" class="form-select">
+          <option value="">- None -</option>
+          ${Object.values(TasksPage.projectsById).map((project) => `<option value="${project.id}" ${task?.project_id === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label class="form-label">Priority</label>
+        <select id="t-prio" class="form-select">
+          ${['low', 'medium', 'high', 'urgent'].map((value) => `<option value="${value}" ${task?.priority === value || (!task && value === 'medium') ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Deadline</label>
+        <input id="t-dead" class="form-input" type="date" value="${task?.deadline || ''}"/></div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="t-status" class="form-select">
+          ${['pending', 'in_progress', 'completed', 'cancelled'].map((value) => `<option value="${value}" ${task?.status === value || (!task && value === 'pending') ? 'selected' : ''}>${value.replace('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase())}</option>`).join('')}
+        </select></div>
+    </div>
+    <p id="task-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
 async function renderTasks() {
   setTopbar('Tasks', canCreateTasks() ? `<button class="btn btn-primary btn-sm" onclick="openAddTask()">+ Add Task</button>` : '');
   const sb = DB.client;
 
-  const [{ data: tasks, error: taskError }, { data: members, error: memberError }, { data: projects, error: projectError }] = await Promise.all([
-    sb.from('tasks').select('id,family_id,project_id,title,description,assigned_user,status,priority,deadline,completed_at,created_by,created_at').eq('family_id', State.fid).order('deadline'),
+  const [{ data: tasks, error: taskError }, { data: members, error: memberError }, { data: projects, error: projectError }, { data: vendors, error: vendorError }] = await Promise.all([
+    sb.from('tasks').select('id,family_id,project_id,title,description,assigned_user,assigned_vendor,status,priority,deadline,completed_at,created_by,created_at').eq('family_id', State.fid).order('deadline'),
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
     sb.from('projects').select('id,name').eq('family_id', State.fid),
+    sb.from('vendors').select('id,name').eq('family_id', State.fid),
   ]);
 
-  if (taskError || memberError || projectError) {
-    console.error('[Tasks] Failed to load:', taskError || memberError || projectError);
+  if (taskError || memberError || projectError || vendorError) {
+    console.error('[Tasks] Failed to load:', taskError || memberError || projectError || vendorError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load tasks right now')}</div>
@@ -44,6 +91,8 @@ async function renderTasks() {
   TasksPage.tasks = tasks || [];
   TasksPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
   TasksPage.projectsById = Object.fromEntries((projects || []).map((project) => [project.id, project]));
+  TasksPage.vendors = vendors || [];
+  TasksPage.vendorsById = Object.fromEntries(TasksPage.vendors.map((vendor) => [vendor.id, vendor]));
 
   const cols = [
     { key: 'pending', label: 'Pending', color: 'var(--warning)' },
@@ -86,7 +135,8 @@ async function renderTasks() {
                     <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escapeHtml(task.title)}</div>
                     <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">
                       ${TasksPage.membersById[task.assigned_user]?.full_name ? 'Assigned: ' + escapeHtml(TasksPage.membersById[task.assigned_user].full_name) : 'Unassigned'}
-                      ${TasksPage.projectsById[task.project_id]?.name ? ` · Project: ${escapeHtml(TasksPage.projectsById[task.project_id].name)}` : ''}
+                      ${TasksPage.projectsById[task.project_id]?.name ? ` | Project: ${escapeHtml(TasksPage.projectsById[task.project_id].name)}` : ''}
+                      ${taskVendorName(task.assigned_vendor) ? ` | Vendor: ${escapeHtml(taskVendorName(task.assigned_vendor))}` : ''}
                     </div>
                     ${task.description ? `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">${escapeHtml(task.description)}</div>` : ''}
                     ${task.deadline ? `
@@ -98,7 +148,8 @@ async function renderTasks() {
                       ${canUpdateTask(task) && col.key !== 'in_progress' && col.key !== 'completed' ? `
                         <button class="btn btn-sm" onclick="updateTaskStatus('${task.id}','in_progress')">Start</button>` : ''}
                       ${canUpdateTask(task) && col.key !== 'completed' ? `
-                        <button class="btn btn-sm" style="background:var(--success-bg);color:var(--success);" onclick="updateTaskStatus('${task.id}','completed')">✓ Done</button>` : ''}
+                        <button class="btn btn-sm" style="background:var(--success-bg);color:var(--success);" onclick="updateTaskStatus('${task.id}','completed')">Done</button>` : ''}
+                      ${canUpdateTask(task) ? `<button class="btn btn-sm" onclick="openEditTask('${task.id}')">Manage</button>` : ''}
                     </div>
                   </div>`;
               }).join('')}
@@ -118,76 +169,68 @@ async function updateTaskStatus(taskId, status) {
   renderPage('tasks');
 }
 
-async function openAddTask() {
+function openAddTask() {
   if (!canCreateTasks()) return;
+  Modal.open('Add Task', taskForm(), [{
+    label: 'Create',
+    cls: 'btn-primary',
+    fn: async () => saveTask(),
+  }]);
+}
 
-  const sb = DB.client;
-  const [{ data: members, error: membersError }, { data: projects, error: projectsError }] = await Promise.all([
-    sb.from('users').select('id,full_name').eq('family_id', State.fid),
-    sb.from('projects').select('id,name').eq('family_id', State.fid).eq('status', 'active'),
-  ]);
+function openEditTask(taskId) {
+  const task = TasksPage.tasks.find((item) => item.id === taskId);
+  if (!task || !canUpdateTask(task)) return;
 
-  if (membersError || projectsError) {
-    console.error('[Tasks] Failed to load task form options:', membersError || projectsError);
+  Modal.open('Manage Task', taskForm(task), [
+    task.status !== 'cancelled' ? {
+      label: 'Cancel Task',
+      cls: 'btn',
+      fn: async () => saveTask(taskId, 'cancelled'),
+    } : null,
+    {
+      label: 'Save',
+      cls: 'btn-primary',
+      fn: async () => saveTask(taskId),
+    },
+  ].filter(Boolean));
+}
+
+async function saveTask(taskId = null, forcedStatus = '') {
+  hideErr('task-err');
+  const title = document.getElementById('t-title')?.value.trim() || '';
+  if (!title) {
+    showErr('task-err', 'Task title is required.');
     return;
   }
 
-  Modal.open('Add Task', `
-    <div class="form-group"><label class="form-label">Task Title</label>
-      <input id="t-title" class="form-input" placeholder="Plant maize in Block A"/></div>
-    <div class="form-group"><label class="form-label">Description</label>
-      <textarea id="t-desc" class="form-textarea" placeholder="Task details..."></textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Assign To</label>
-        <select id="t-user" class="form-select">
-          <option value="">— Unassigned —</option>
-          ${(members || []).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
-        </select></div>
-      <div class="form-group"><label class="form-label">Project</label>
-        <select id="t-proj" class="form-select">
-          <option value="">— None —</option>
-          ${(projects || []).map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('')}
-        </select></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Deadline</label>
-        <input id="t-dead" class="form-input" type="date"/></div>
-      <div class="form-group"><label class="form-label">Priority</label>
-        <select id="t-prio" class="form-select">
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="low">Low</option>
-        </select></div>
-    </div>
-    <p id="task-err" style="color:var(--danger);font-size:12px;display:none;"></p>
-  `, [{ label: 'Create', cls: 'btn-primary', fn: async () => {
-    hideErr('task-err');
-    const title = document.getElementById('t-title')?.value.trim() || '';
-    if (!title) {
-      showErr('task-err', 'Task title is required.');
-      return;
-    }
+  const status = forcedStatus || document.getElementById('t-status')?.value || 'pending';
+  const payload = {
+    family_id: State.fid,
+    title,
+    description: document.getElementById('t-desc')?.value.trim() || null,
+    assigned_user: document.getElementById('t-user')?.value || null,
+    assigned_vendor: document.getElementById('t-vendor')?.value || null,
+    project_id: document.getElementById('t-proj')?.value || null,
+    deadline: document.getElementById('t-dead')?.value || null,
+    priority: document.getElementById('t-prio')?.value || 'medium',
+    status,
+    completed_at: status === 'completed' ? new Date().toISOString() : null,
+    created_by: State.uid,
+  };
 
-    const { error } = await DB.client.from('tasks').insert({
-      family_id: State.fid,
-      title,
-      description: document.getElementById('t-desc')?.value.trim() || null,
-      assigned_user: document.getElementById('t-user')?.value || null,
-      project_id: document.getElementById('t-proj')?.value || null,
-      deadline: document.getElementById('t-dead')?.value || null,
-      priority: document.getElementById('t-prio')?.value || 'medium',
-      status: 'pending',
-      created_by: State.uid,
-    });
+  const query = taskId
+    ? DB.client.from('tasks').update(payload).eq('id', taskId)
+    : DB.client.from('tasks').insert(payload);
 
-    if (error) {
-      showErr('task-err', error.message);
-      return;
-    }
+  const { error } = await query;
+  if (error) {
+    showErr('task-err', error.message);
+    return;
+  }
 
-    Modal.close();
-    renderPage('tasks');
-  }}]);
+  Modal.close();
+  renderPage('tasks');
 }
 
 Router.register('tasks', renderTasks);
