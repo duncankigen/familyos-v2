@@ -2,8 +2,12 @@
  * js/pages/dashboard.js
  * ─────────────────────────────────────────────────────
  * Dashboard — summary cards, recent tasks, goal progress,
- * latest announcements, AI insights strip.
+ * latest announcements, AI insights strip, and export actions.
  */
+
+const DashboardPage = {
+  snapshotRows: [],
+};
 
 async function attachDashboardAnnouncementAuthors(items) {
   const announcements = items || [];
@@ -30,19 +34,6 @@ async function attachDashboardAnnouncementAuthors(items) {
 }
 
 async function fetchDashboardFinanceSummary(fid) {
-  const { data, error } = await DB.client.rpc('get_family_finance_summary', {
-    p_family_id: fid,
-  });
-
-  const summary = Array.isArray(data) ? data[0] : data;
-  if (!error && summary) {
-    return {
-      balance: Number(summary.balance || 0),
-      this_month_contributions: Number(summary.this_month_contributions || 0),
-      this_month_expenses: Number(summary.this_month_expenses || 0),
-    };
-  }
-
   const [{ data: contrib }, { data: exp }] = await Promise.all([
     DB.client.from('contributions').select('amount,created_at').eq('family_id', fid),
     DB.client.from('expenses').select('amount,created_at').eq('family_id', fid),
@@ -51,30 +42,52 @@ async function fetchDashboardFinanceSummary(fid) {
   const now = new Date();
   const month = now.getMonth();
   const year = now.getFullYear();
-  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount), 0);
-  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount), 0);
+  const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const thisMonthContributions = (contrib || [])
     .filter((item) => {
       const date = new Date(item.created_at);
       return date.getMonth() === month && date.getFullYear() === year;
     })
-    .reduce((sum, item) => sum + Number(item.amount), 0);
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const thisMonthExpenses = (exp || [])
     .filter((item) => {
       const date = new Date(item.created_at);
       return date.getMonth() === month && date.getFullYear() === year;
     })
-    .reduce((sum, item) => sum + Number(item.amount), 0);
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
   return {
+    total_contributions: totalContributions,
+    total_expenses: totalExpenses,
     balance: totalContributions - totalExpenses,
     this_month_contributions: thisMonthContributions,
     this_month_expenses: thisMonthExpenses,
   };
 }
 
+function dashboardActionsHtml() {
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-sm" onclick="downloadDashboardSnapshotCsv()">Export Snapshot</button>
+      <button class="btn btn-sm" onclick="printDashboardView()">Print</button>
+    </div>`;
+}
+
+function downloadDashboardSnapshotCsv() {
+  if (!downloadCsv(`familyos-dashboard-snapshot-${exportDateStamp()}.csv`, DashboardPage.snapshotRows)) {
+    alert('There is no dashboard snapshot to export yet.');
+  }
+}
+
+function printDashboardView() {
+  const content = document.getElementById('page-content');
+  if (!content) return;
+  openPrintDocument('FamilyOS Dashboard Snapshot', content.innerHTML);
+}
+
 async function renderDashboard() {
-  setTopbar('Dashboard');
+  setTopbar('Dashboard', dashboardActionsHtml());
   const fid = State.fid;
   const sb = DB.client;
 
@@ -85,6 +98,7 @@ async function renderDashboard() {
     { data: goals },
     { data: announcements },
     { data: insights },
+    { data: projects },
   ] = await Promise.all([
     fetchDashboardFinanceSummary(fid),
     sb.from('users').select('*').eq('family_id', fid).eq('is_active', true),
@@ -105,15 +119,44 @@ async function renderDashboard() {
       .order('created_at', { ascending: false })
       .limit(3),
     sb.from('ai_insights').select('*').eq('family_id', fid).eq('is_read', false).order('created_at', { ascending: false }).limit(3),
+    sb.from('projects').select('id,status').eq('family_id', fid),
   ]);
 
   const now = new Date();
   const overdue = (tasks || []).filter((task) => task.deadline && new Date(task.deadline) < now).length;
   const announcementFeed = await attachDashboardAnnouncementAuthors(announcements || []);
   const activeInsights = (insights || []).filter((insight) => !insight.expires_at || new Date(insight.expires_at) > now);
+  const activeProjects = (projects || []).filter((project) => project.status === 'active').length;
+
+  DashboardPage.snapshotRows = [
+    { metric: 'Generated On', value: fmtDate(now.toISOString()) },
+    { metric: 'Family Balance', value: summary.balance },
+    { metric: 'Total Contributions', value: summary.total_contributions },
+    { metric: 'Total Expenses', value: summary.total_expenses },
+    { metric: 'This Month Contributions', value: summary.this_month_contributions },
+    { metric: 'This Month Expenses', value: summary.this_month_expenses },
+    { metric: 'Pending Tasks', value: (tasks || []).length },
+    { metric: 'Overdue Tasks', value: overdue },
+    { metric: 'Active Members', value: (members || []).length },
+    { metric: 'Active Goals', value: (goals || []).length },
+    { metric: 'Active Projects', value: activeProjects },
+    { metric: 'Recent Announcements', value: announcementFeed.length },
+    { metric: 'Unread AI Insights', value: activeInsights.length },
+  ];
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      <div class="card mb16" style="border-left:3px solid var(--accent);">
+        <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
+          <div>
+            <div class="card-title" style="margin-bottom:4px;">Meeting-Ready Dashboard Snapshot</div>
+            <div style="font-size:13px;color:var(--text2);">
+              Export this dashboard as a CSV snapshot or print the view for family meetings, treasurer updates, and progress check-ins.
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);">Generated ${fmtDate(now.toISOString())}</div>
+        </div>
+      </div>
 
       <div class="g4 mb16">
         <div class="metric-card">
@@ -140,7 +183,10 @@ async function renderDashboard() {
 
       <div class="g2 mb16">
         <div class="card">
-          <div class="card-title">Active Tasks</div>
+          <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin-bottom:0;">Active Tasks</div>
+            <div style="font-size:11px;color:var(--text3);">${(tasks || []).length} pending</div>
+          </div>
           ${(tasks || []).slice(0, 5).map((task) => `
             <div class="flex-between mb8">
               <div>
@@ -154,7 +200,10 @@ async function renderDashboard() {
         </div>
 
         <div class="card">
-          <div class="card-title">Family Goals</div>
+          <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin-bottom:0;">Family Goals</div>
+            <div style="font-size:11px;color:var(--text3);">${(goals || []).length} active</div>
+          </div>
           ${(goals || []).slice(0, 4).map((goal) => {
             const pct = Math.min(100, Math.round(goal.current_amount / goal.target_amount * 100));
             return `
@@ -174,7 +223,10 @@ async function renderDashboard() {
 
       <div class="g2 mb16">
         <div class="card">
-          <div class="card-title">Announcements</div>
+          <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin-bottom:0;">Announcements</div>
+            <div style="font-size:11px;color:var(--text3);">${announcementFeed.length} recent</div>
+          </div>
           ${announcementFeed.map((announcement) => `
             <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px;">
               <div style="font-size:11px;font-weight:600;color:var(--accent);">
@@ -193,7 +245,10 @@ async function renderDashboard() {
         </div>
 
         <div class="card">
-          <div class="card-title">AI Insights</div>
+          <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin-bottom:0;">AI Insights</div>
+            <div style="font-size:11px;color:var(--text3);">${activeInsights.length} active</div>
+          </div>
           ${activeInsights.map((insight) => `
             <div class="ai-card ai-${insight.severity === 'warning' ? 'amber' : insight.severity === 'alert' ? 'red' : insight.severity === 'success' ? 'green' : 'blue'}">
               <div class="ai-tag" style="color:var(--${insight.severity === 'warning' ? 'warning' : insight.severity === 'alert' ? 'danger' : insight.severity === 'success' ? 'success' : 'accent'});">

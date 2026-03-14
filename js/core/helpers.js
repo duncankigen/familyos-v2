@@ -117,6 +117,93 @@ function safeFileName(value) {
     .replace(/^-|-$/g, '') || 'file';
 }
 
+/** Return a YYYY-MM-DD date stamp for exports. */
+function exportDateStamp() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Download an array of objects as CSV. */
+function downloadCsv(filename, rows) {
+  const items = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!items.length) return false;
+
+  const headers = [...new Set(items.flatMap((row) => Object.keys(row || {})))];
+  if (!headers.length) return false;
+
+  const escapeCsv = (value) => {
+    const text = String(value ?? '');
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+
+  const csv = [
+    headers.join(','),
+    ...items.map((row) => headers.map((header) => escapeCsv(row?.[header])).join(',')),
+  ].join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || `export-${exportDateStamp()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+/** Open a print-friendly window for the provided HTML. */
+function openPrintDocument(title, bodyHtml) {
+  const printWindow = window.open('', '_blank', 'width=1100,height=800');
+  if (!printWindow) return false;
+
+  const stylesheetLinks = [...document.querySelectorAll('link[rel="stylesheet"]')]
+    .map((link) => `<link rel="stylesheet" href="${link.href}">`)
+    .join('');
+
+  printWindow.document.open();
+  printWindow.document.write(`<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(title || 'FamilyOS Print View')}</title>
+    ${stylesheetLinks}
+    <style>
+      body { padding: 24px; background: #fff; }
+      .print-shell { max-width: 1100px; margin: 0 auto; }
+      .print-head { margin-bottom: 20px; }
+      .print-title { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+      .print-sub { font-size: 12px; color: #666; }
+      @media print {
+        body { padding: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-shell">
+      <div class="print-head">
+        <div class="print-title">${escapeHtml(title || 'FamilyOS Report')}</div>
+        <div class="print-sub">Generated ${fmtDate(new Date().toISOString())}</div>
+      </div>
+      ${bodyHtml || ''}
+    </div>
+  </body>
+  </html>`);
+  printWindow.document.close();
+
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 250);
+
+  return true;
+}
+
 /** Upload a single optional record attachment and return a public URL plus label. */
 async function uploadFinanceAttachment(file, folder) {
   if (!file) return { url: null, name: null };
