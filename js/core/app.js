@@ -188,6 +188,7 @@ async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
   setSidebarIdentity(profile, user);
+  Sidebar.updateAnnouncementBadge(0);
 
   if (!State.currentFamilyId) {
     showFamilySetup();
@@ -244,6 +245,7 @@ function resetSessionState() {
   State.currentUser = null;
   State.currentProfile = null;
   State.currentFamilyId = null;
+  State.unreadAnnouncements = 0;
   Modal.close();
 }
 

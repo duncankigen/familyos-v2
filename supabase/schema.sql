@@ -37,6 +37,7 @@ create table if not exists users (
   role text not null default 'member',
   avatar_url text,
   is_active boolean default true,
+  last_announcements_seen_at timestamptz default now(),
   created_at timestamptz default now(),
   constraint role_check check (role in ('admin','treasurer','project_manager','member','youth'))
 );
@@ -51,6 +52,7 @@ alter table public.users add column if not exists phone text;
 alter table public.users add column if not exists role text default 'member';
 alter table public.users add column if not exists avatar_url text;
 alter table public.users add column if not exists is_active boolean default true;
+alter table public.users add column if not exists last_announcements_seen_at timestamptz default now();
 alter table public.users add column if not exists created_at timestamptz default now();
 
 update public.users u
@@ -75,6 +77,7 @@ set
   ),
   role = coalesce(nullif(trim(u.role), ''), 'member'),
   is_active = coalesce(u.is_active, true),
+  last_announcements_seen_at = coalesce(u.last_announcements_seen_at, now()),
   created_at = coalesce(u.created_at, now())
 from auth.users a
 where a.id = u.id
@@ -85,6 +88,7 @@ where a.id = u.id
     u.full_name is null or trim(u.full_name) = ''
     or u.role is null or trim(u.role) = ''
     or u.is_active is null
+    or u.last_announcements_seen_at is null
     or u.created_at is null
   );
 
@@ -92,6 +96,7 @@ alter table public.users alter column full_name set not null;
 alter table public.users alter column role set default 'member';
 alter table public.users alter column role set not null;
 alter table public.users alter column is_active set default true;
+alter table public.users alter column last_announcements_seen_at set default now();
 alter table public.users alter column created_at set default now();
 
 do $$
@@ -153,7 +158,7 @@ create table if not exists announcements (
   is_pinned boolean not null default false,
   is_archived boolean not null default false,
   archived_at timestamptz,
-  archived_by uuid
+  archived_by uuid references users(id) on delete set null
 );
 
 create index if not exists announcements_family_feed_idx

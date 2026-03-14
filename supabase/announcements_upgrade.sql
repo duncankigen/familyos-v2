@@ -1,8 +1,28 @@
+alter table users add column if not exists last_announcements_seen_at timestamptz default now();
+
 alter table announcements add column if not exists updated_at timestamptz default now();
 alter table announcements add column if not exists is_pinned boolean not null default false;
 alter table announcements add column if not exists is_archived boolean not null default false;
 alter table announcements add column if not exists archived_at timestamptz;
 alter table announcements add column if not exists archived_by uuid;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'announcements_archived_by_fkey'
+      and conrelid = 'public.announcements'::regclass
+  ) then
+    alter table announcements
+      add constraint announcements_archived_by_fkey
+      foreign key (archived_by) references users(id) on delete set null;
+  end if;
+end $$;
+
+update users
+set last_announcements_seen_at = coalesce(last_announcements_seen_at, now())
+where last_announcements_seen_at is null;
 
 update announcements
 set

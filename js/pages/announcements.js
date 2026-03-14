@@ -120,35 +120,51 @@ function renderAnnouncementsView() {
     <div class="content">
       <div class="flex-col">
         ${AnnouncementsPage.items.map((announcement) => `
-          <div class="card ann-card">
-            <div class="ann-head">
-              <div class="flex gap8 ann-author">
-                ${avatarHtml(announcement.author?.full_name || 'A', 'av-sm')}
-                <div style="min-width:0;">
-                  <div class="ann-name">${announcement.author?.full_name || 'Admin'}</div>
-                  <div class="ann-time">${ago(announcement.created_at)}</div>
-                </div>
+          <div class="card">
+            <div class="flex-between mb8" style="align-items:flex-start;gap:12px;">
+              <div style="font-size:11px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px;">
+                ${announcementIcon(12)}
+                <span>${announcement.author?.full_name || 'Admin'} · ${ago(announcement.created_at)}</span>
               </div>
               ${renderAnnouncementMenu(announcement)}
             </div>
-            <div class="ann-flags">
-              ${announcement.is_pinned ? `
-                <span class="badge b-amber">
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style="margin-right:4px;" aria-hidden="true">
-                    <path d="M8 1.5l2.1 4.1 4.4.6-3.2 3.1.7 4.3L8 11.6 4 13.6l.7-4.3L1.5 6.2l4.4-.6L8 1.5z"></path>
-                  </svg>
-                  Pinned
-                </span>` : ''}
-              ${(announcement.updated_at && announcement.updated_at !== announcement.created_at)
-                ? `<span class="ann-meta">Edited ${ago(announcement.updated_at)}</span>`
-                : ''}
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <div style="color:var(--accent);display:flex;align-items:center;justify-content:center;margin-top:2px;">
+                ${announcementIcon(18)}
+              </div>
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${announcement.title}</div>
+                <div class="ann-flags" style="margin-bottom:8px;">
+                  ${announcement.is_pinned ? '<span class="badge b-amber">Pinned</span>' : ''}
+                  ${(announcement.updated_at && announcement.updated_at !== announcement.created_at)
+                    ? `<span class="ann-meta">Edited ${ago(announcement.updated_at)}</span>`
+                    : ''}
+                </div>
+                <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;">${announcement.message}</div>
+              </div>
             </div>
-            <div class="ann-title">${announcement.title}</div>
-            <div class="ann-message">${announcement.message}</div>
           </div>`).join('')}
         ${!AnnouncementsPage.items.length ? `<div class="card">${empty('No announcements yet')}</div>` : ''}
       </div>
     </div>`;
+}
+
+async function markAnnouncementsSeen() {
+  if (!State.uid || !State.currentProfile) return;
+
+  const seenAt = new Date().toISOString();
+  const { error } = await DB.client
+    .from('users')
+    .update({ last_announcements_seen_at: seenAt })
+    .eq('id', State.uid);
+
+  if (error) {
+    console.warn('[Announcements] Failed to mark announcements as seen:', error);
+    return;
+  }
+
+  State.currentProfile.last_announcements_seen_at = seenAt;
+  Sidebar.updateAnnouncementBadge(0);
 }
 
 async function renderAnnouncements() {
@@ -192,6 +208,7 @@ async function renderAnnouncements() {
 
   AnnouncementsPage.items = data || [];
   renderAnnouncementsView();
+  markAnnouncementsSeen();
 }
 
 function toggleAnnouncementMenu(announcementId) {

@@ -97,6 +97,12 @@ const Router = {
     } else {
       content.innerHTML = `<div class="content"><div class="card">Page <strong>${resolvedPage}</strong> not found.</div></div>`;
     }
+
+    if (typeof Sidebar?.refreshAnnouncementBadge === 'function') {
+      Sidebar.refreshAnnouncementBadge().catch((error) => {
+        console.warn('[Router] Failed to refresh announcement badge:', error);
+      });
+    }
   },
 };
 

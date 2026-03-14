@@ -45,10 +45,18 @@ const Sidebar = {
       if (item.section) {
         return `<div class="sb-section">${item.section}</div>`;
       }
+
+      const count = item.page === 'announcements'
+        ? (State.unreadAnnouncements > 99 ? '99+' : String(State.unreadAnnouncements || ''))
+        : '';
+
       return `
         <div class="sb-item" data-page="${item.page}" onclick="nav('${item.page}')">
           <svg viewBox="0 0 16 16" fill="currentColor">${item.icon}</svg>
-          ${item.label}
+          <span>${item.label}</span>
+          ${item.page === 'announcements'
+            ? `<span id="sb-announcements-badge" class="badge b-red" style="margin-left:auto;${count ? '' : 'display:none;'}">${count}</span>`
+            : ''}
         </div>`;
     }).join('');
 
@@ -80,6 +88,47 @@ const Sidebar = {
         </div>
         <button class="btn btn-sm" style="width:100%;margin-top:8px;" onclick="Auth.signOut()">Sign Out</button>
       </div>`;
+  },
+
+  updateAnnouncementBadge(count) {
+    State.unreadAnnouncements = Number(count || 0);
+    const badge = document.getElementById('sb-announcements-badge');
+    if (!badge) return;
+
+    if (State.unreadAnnouncements > 0) {
+      badge.style.display = 'inline-flex';
+      badge.textContent = State.unreadAnnouncements > 99 ? '99+' : String(State.unreadAnnouncements);
+      return;
+    }
+
+    badge.style.display = 'none';
+    badge.textContent = '';
+  },
+
+  async refreshAnnouncementBadge() {
+    if (!State.supabase || !State.fid || !State.uid || !State.currentProfile) {
+      this.updateAnnouncementBadge(0);
+      return;
+    }
+
+    let query = DB.client
+      .from('announcements')
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', State.fid)
+      .eq('is_archived', false)
+      .neq('created_by', State.uid);
+
+    if (State.currentProfile.last_announcements_seen_at) {
+      query = query.gt('created_at', State.currentProfile.last_announcements_seen_at);
+    }
+
+    const { count, error } = await query;
+    if (error) {
+      console.warn('[Sidebar] Failed to load announcement count:', error);
+      return;
+    }
+
+    this.updateAnnouncementBadge(count || 0);
   },
 
   toggle() {

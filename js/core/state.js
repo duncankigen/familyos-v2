@@ -12,6 +12,7 @@ const State = {
   currentFamilyId: null,   // UUID of the active family
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
+  unreadAnnouncements: 0,
   isDark:          localStorage.getItem('fos_theme') === 'dark',
 
   /** Convenience getter so pages don't repeat this pattern. */

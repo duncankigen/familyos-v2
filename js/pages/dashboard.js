@@ -24,7 +24,20 @@ async function renderDashboard() {
     sb.from('users').select('*').eq('family_id', fid).eq('is_active', true),
     sb.from('tasks').select('*').eq('family_id', fid).neq('status', 'completed').order('deadline'),
     sb.from('family_goals').select('*').eq('family_id', fid).eq('status', 'active'),
-    sb.from('announcements').select('*,users(full_name)').eq('family_id', fid).order('created_at', { ascending: false }).limit(3),
+    sb.from('announcements')
+      .select(`
+        id,
+        title,
+        message,
+        created_at,
+        is_pinned,
+        author:users!announcements_created_by_fkey(full_name)
+      `)
+      .eq('family_id', fid)
+      .eq('is_archived', false)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(3),
     sb.from('ai_insights').select('*').eq('family_id', fid).eq('is_read', false).order('created_at', { ascending: false }).limit(3),
   ]);
 
@@ -107,15 +120,21 @@ async function renderDashboard() {
           <div class="card-title">Announcements</div>
           ${(announcements || []).map(a => `
             <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px;">
-              <div style="font-size:11px;font-weight:600;color:var(--accent);">
-                ${a.users?.full_name || 'Admin'} · ${ago(a.created_at)}
+              <div style="font-size:11px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px;">
+                ${announcementIcon(12)}
+                <span>${a.author?.full_name || 'Admin'} · ${ago(a.created_at)}</span>
               </div>
-              <div style="font-size:13px;font-weight:600;margin-top:2px;">${a.title}</div>
+              <div style="font-size:13px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:6px;">
+                <span style="color:var(--accent);display:flex;align-items:center;">${announcementIcon(14)}</span>
+                <span>${a.title}</span>
+                ${a.is_pinned ? '<span class="badge b-amber" style="margin-left:4px;">Pinned</span>' : ''}
+              </div>
               <div style="font-size:12px;color:var(--text2);margin-top:3px;">
                 ${a.message.substring(0, 100)}${a.message.length > 100 ? '...' : ''}
               </div>
             </div>`).join('')}
           ${!(announcements || []).length ? empty('No announcements') : ''}
+          <button class="btn btn-sm" style="margin-top:8px;" onclick="nav('announcements')">View all announcements</button>
         </div>
 
         <div class="card">
