@@ -10,7 +10,30 @@ const TasksPage = {
   vendorsById: {},
   vendors: [],
   commentsByTaskId: {},
+  projectFilterStorageKey: 'fos_tasks_project_filter',
 };
+
+function setActiveTaskProjectFilter(projectId = '') {
+  if (!projectId) {
+    localStorage.removeItem(TasksPage.projectFilterStorageKey);
+    return;
+  }
+
+  localStorage.setItem(TasksPage.projectFilterStorageKey, projectId);
+}
+
+function activeTaskProjectFilterId() {
+  return localStorage.getItem(TasksPage.projectFilterStorageKey) || '';
+}
+
+function activeTaskProject() {
+  return TasksPage.projectsById[activeTaskProjectFilterId()] || null;
+}
+
+function clearTaskProjectFilter() {
+  setActiveTaskProjectFilter('');
+  renderPage('tasks');
+}
 
 function canCreateTasks() {
   return ['admin', 'project_manager', 'treasurer'].includes(State.currentProfile?.role);
@@ -45,6 +68,9 @@ function taskPriorityBadge(priority) {
 }
 
 function taskForm(task = null) {
+  const filteredProjectId = activeTaskProjectFilterId();
+  const selectedProjectId = task?.project_id || (!task && filteredProjectId ? filteredProjectId : '');
+
   return `
     <div class="form-group"><label class="form-label">Task Title</label>
       <input id="t-title" class="form-input" placeholder="Plant maize in Block A" value="${escapeHtml(task?.title || '')}"/></div>
@@ -66,7 +92,7 @@ function taskForm(task = null) {
       <div class="form-group"><label class="form-label">Project</label>
         <select id="t-proj" class="form-select">
           <option value="">- None -</option>
-          ${Object.values(TasksPage.projectsById).map((project) => `<option value="${project.id}" ${task?.project_id === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}
+          ${Object.values(TasksPage.projectsById).map((project) => `<option value="${project.id}" ${selectedProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('')}
         </select></div>
       <div class="form-group"><label class="form-label">Priority</label>
         <select id="t-prio" class="form-select">
@@ -217,6 +243,10 @@ async function renderTasks() {
   TasksPage.projectsById = Object.fromEntries((projects || []).map((project) => [project.id, project]));
   TasksPage.vendors = vendors || [];
   TasksPage.vendorsById = Object.fromEntries(TasksPage.vendors.map((vendor) => [vendor.id, vendor]));
+  const filteredProjectId = activeTaskProjectFilterId();
+  if (filteredProjectId && !TasksPage.projectsById[filteredProjectId]) {
+    setActiveTaskProjectFilter('');
+  }
   const commentCountByTask = {};
   (comments || []).forEach((comment) => {
     commentCountByTask[comment.task_id] = (commentCountByTask[comment.task_id] || 0) + 1;
@@ -229,24 +259,44 @@ async function renderTasks() {
   ];
 
   const grouped = Object.fromEntries(cols.map((col) => [col.key, []]));
-  TasksPage.tasks.forEach((task) => {
+  const visibleTasks = filteredProjectId
+    ? TasksPage.tasks.filter((task) => task.project_id === filteredProjectId)
+    : TasksPage.tasks;
+  visibleTasks.forEach((task) => {
     const bucket = taskStatusGroup(task);
     if (grouped[bucket]) grouped[bucket].push(task);
   });
 
   const now = new Date();
+  const activeProject = filteredProjectId ? TasksPage.projectsById[filteredProjectId] : null;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      ${activeProject ? `
+        <div class="card mb16" style="border-left:3px solid var(--accent);">
+          <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+              <div class="card-title" style="margin-bottom:4px;">Project Task View</div>
+              <div style="font-size:13px;color:var(--text2);">
+                Showing only tasks linked to <strong>${escapeHtml(activeProject.name)}</strong>.
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-sm" onclick="openProjectCard('${activeProject.id}')">Back to Project</button>
+              <button class="btn btn-sm" onclick="clearTaskProjectFilter()">Show All Tasks</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total</div>
-          <div class="metric-value">${TasksPage.tasks.length}</div></div>
+          <div class="metric-value">${visibleTasks.length}</div></div>
         <div class="metric-card"><div class="metric-label">Pending</div>
           <div class="metric-value" style="color:var(--warning);">${(grouped.pending || []).length}</div></div>
         <div class="metric-card"><div class="metric-label">In Progress</div>
           <div class="metric-value" style="color:var(--accent);">${(grouped.in_progress || []).length}</div></div>
         <div class="metric-card"><div class="metric-label">Overdue</div>
-          <div class="metric-value" style="color:var(--danger);">${TasksPage.tasks.filter((task) => task.deadline && new Date(task.deadline) < now && task.status !== 'completed').length}</div></div>
+          <div class="metric-value" style="color:var(--danger);">${visibleTasks.filter((task) => task.deadline && new Date(task.deadline) < now && task.status !== 'completed').length}</div></div>
       </div>
 
       <div class="g3">
@@ -285,7 +335,7 @@ async function renderTasks() {
                     </div>
                   </div>`;
               }).join('')}
-              ${!(grouped[col.key] || []).length ? `<div style="font-size:12px;color:var(--text3);text-align:center;padding:20px;">No tasks</div>` : ''}
+              ${!(grouped[col.key] || []).length ? `<div style="font-size:12px;color:var(--text3);text-align:center;padding:20px;">${activeProject ? 'No tasks for this project in this column' : 'No tasks'}</div>` : ''}
             </div>
           </div>`).join('')}
       </div>

@@ -52,6 +52,26 @@ function openProjectCard(projectId) {
   nav('project-detail');
 }
 
+function openProjectTasks(projectId) {
+  rememberActiveProject(projectId);
+  if (typeof setActiveTaskProjectFilter === 'function') {
+    setActiveTaskProjectFilter(projectId);
+  } else {
+    localStorage.setItem('fos_tasks_project_filter', projectId);
+  }
+  nav('tasks');
+}
+
+function openProjectExpenses(projectId) {
+  rememberActiveProject(projectId);
+  if (typeof setActiveExpenseProjectFilter === 'function') {
+    setActiveExpenseProjectFilter(projectId);
+  } else {
+    localStorage.setItem('fos_expenses_project_filter', projectId);
+  }
+  nav('expenses');
+}
+
 function openProjectFarming(projectId) {
   rememberActiveProject(projectId);
   if (typeof setActiveFarmingProject === 'function') {
@@ -654,7 +674,7 @@ async function renderProjectDetail() {
               ${statusBadge(task.status)}
             </div>`).join('')}
           ${!(tasks || []).length ? empty('No tasks linked to this project yet') : ''}
-          <button class="btn btn-sm" style="margin-top:8px;" onclick="nav('tasks')">Open Tasks</button>
+          <button class="btn btn-sm" style="margin-top:8px;" onclick="openProjectTasks('${project.id}')">Open Tasks</button>
         </div>
 
         <div class="card">
@@ -696,7 +716,7 @@ async function renderProjectDetail() {
         ${!(expenses || []).length ? empty('No expenses linked to this project yet') : ''}
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
           ${canCreateProjectExpense() && !isFarmingProject ? `<button class="btn btn-sm" onclick="openProjectExpenseModal('${project.id}')">+ Add Expense</button>` : ''}
-          <button class="btn btn-sm" onclick="nav('expenses')">Open Expenses</button>
+          <button class="btn btn-sm" onclick="openProjectExpenses('${project.id}')">Open Expenses</button>
         </div>
       </div>
     </div>`;

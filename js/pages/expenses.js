@@ -10,7 +10,30 @@ const ExpensesPage = {
   projects: [],
   vendors: [],
   expandedIds: new Set(),
+  projectFilterStorageKey: 'fos_expenses_project_filter',
 };
+
+function setActiveExpenseProjectFilter(projectId = '') {
+  if (!projectId) {
+    localStorage.removeItem(ExpensesPage.projectFilterStorageKey);
+    return;
+  }
+
+  localStorage.setItem(ExpensesPage.projectFilterStorageKey, projectId);
+}
+
+function activeExpenseProjectFilterId() {
+  return localStorage.getItem(ExpensesPage.projectFilterStorageKey) || '';
+}
+
+function activeExpenseProject() {
+  return ExpensesPage.projects.find((project) => project.id === activeExpenseProjectFilterId()) || null;
+}
+
+function clearExpenseProjectFilter() {
+  setActiveExpenseProjectFilter('');
+  renderPage('expenses');
+}
 
 function canCreateExpenses() {
   return ['admin', 'treasurer', 'project_manager'].includes(State.currentProfile?.role);
@@ -60,6 +83,9 @@ function expenseDetailsMarkup(expense) {
 }
 
 function expenseForm(expense = null) {
+  const filteredProjectId = activeExpenseProjectFilterId();
+  const selectedProjectId = expense?.project_id || (!expense && filteredProjectId ? filteredProjectId : '');
+
   return `
     <div class="form-group">
       <label class="form-label">Description</label>
@@ -88,7 +114,7 @@ function expenseForm(expense = null) {
         <select id="e-proj" class="form-select">
           <option value="">— None —</option>
           ${ExpensesPage.projects.map((project) => `
-            <option value="${project.id}" ${expense?.project_id === project.id ? 'selected' : ''}>${project.name}</option>
+            <option value="${project.id}" ${selectedProjectId === project.id ? 'selected' : ''}>${project.name}</option>
           `).join('')}
         </select>
       </div>
@@ -165,11 +191,35 @@ async function renderExpenses() {
   ExpensesPage.items = data || [];
   ExpensesPage.projects = projects || [];
   ExpensesPage.vendors = vendors || [];
+  const filteredProjectId = activeExpenseProjectFilterId();
+  if (filteredProjectId && !ExpensesPage.projects.find((project) => project.id === filteredProjectId)) {
+    setActiveExpenseProjectFilter('');
+  }
 
-  const total = ExpensesPage.items.reduce((sum, item) => sum + Number(item.amount), 0);
+  const visibleExpenses = filteredProjectId
+    ? ExpensesPage.items.filter((item) => item.project_id === filteredProjectId)
+    : ExpensesPage.items;
+  const total = visibleExpenses.reduce((sum, item) => sum + Number(item.amount), 0);
+  const activeProject = filteredProjectId ? ExpensesPage.projects.find((project) => project.id === filteredProjectId) : null;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      ${activeProject ? `
+        <div class="card mb16" style="border-left:3px solid var(--accent);">
+          <div class="flex-between" style="gap:12px;align-items:flex-start;flex-wrap:wrap;">
+            <div>
+              <div class="card-title" style="margin-bottom:4px;">Project Expense View</div>
+              <div style="font-size:13px;color:var(--text2);">
+                Showing only expenses linked to <strong>${escapeHtml(activeProject.name)}</strong>.
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-sm" onclick="openProjectCard('${activeProject.id}')">Back to Project</button>
+              <button class="btn btn-sm" onclick="clearExpenseProjectFilter()">Show All Expenses</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
       <div class="g4 mb16">
         <div class="metric-card">
           <div class="metric-label">Total Expenses</div>
@@ -177,7 +227,7 @@ async function renderExpenses() {
         </div>
         <div class="metric-card">
           <div class="metric-label">Records</div>
-          <div class="metric-value">${ExpensesPage.items.length}</div>
+          <div class="metric-value">${visibleExpenses.length}</div>
         </div>
       </div>
       <div class="card">
@@ -187,7 +237,7 @@ async function renderExpenses() {
               <tr><th>Description</th><th>Project</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Date</th>${canManageExpenses() ? '<th>Action</th>' : ''}</tr>
             </thead>
             <tbody>
-              ${ExpensesPage.items.map((expense) => `
+              ${visibleExpenses.map((expense) => `
                 <tr class="record-row" onclick="toggleExpenseDetails('${expense.id}')">
                   <td style="font-size:13px;">
                     <div>${escapeHtml(expense.description)}</div>
@@ -212,7 +262,7 @@ async function renderExpenses() {
             </tbody>
           </table>
         </div>
-        ${!ExpensesPage.items.length ? empty('No expenses recorded yet') : ''}
+        ${!visibleExpenses.length ? empty(activeProject ? 'No expenses recorded for this project yet' : 'No expenses recorded yet') : ''}
       </div>
     </div>`;
 }
