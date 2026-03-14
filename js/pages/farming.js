@@ -521,9 +521,9 @@ async function renderFarming() {
       <div class="card">
         <div class="card-title">Outputs & Yield</div>
         <div class="tag-row" style="margin-bottom:10px;">
-          <span class="badge b-green">Sold ${fmt(soldCount)}</span>
-          <span class="badge b-blue">Stored ${fmt(storedCount)}</span>
-          <span class="badge b-amber">Consumed ${fmt(consumedCount)}</span>
+          <span class="badge b-green">Sold ${fmt(farmSummary.soldCount)}</span>
+          <span class="badge b-blue">Stored ${fmt(farmSummary.storedCount)}</span>
+          <span class="badge b-amber">Consumed ${fmt(farmSummary.consumedCount)}</span>
           ${scopedProject ? `<span class="badge b-gray">${escapeHtml(scopedProject.name)}</span>` : ''}
         </div>
         <div class="table-wrap">
