@@ -47,7 +47,7 @@ function hideErr(id) {
 function statusBadge(s) {
   const map = {
     active: 'b-green', planning: 'b-blue', paused: 'b-amber',
-    completed: 'b-gray', cancelled: 'b-red',
+    completed: 'b-gray', achieved: 'b-green', scheduled: 'b-blue', cancelled: 'b-red',
     pending: 'b-amber', in_progress: 'b-blue', overdue: 'b-red',
     paid: 'b-green', partial: 'b-amber',
     open: 'b-green', closed: 'b-gray',
