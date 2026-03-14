@@ -170,21 +170,11 @@ function renderAnnouncementsView() {
 }
 
 async function markAnnouncementsSeen() {
-  if (!State.uid || !State.currentProfile) return;
-
-  const seenAt = new Date().toISOString();
-  const { error } = await DB.client
-    .from('users')
-    .update({ last_announcements_seen_at: seenAt })
-    .eq('id', State.uid);
-
-  if (error) {
+  try {
+    await Sidebar.markSectionSeen('announcements');
+  } catch (error) {
     console.warn('[Announcements] Failed to mark announcements as seen:', error);
-    return;
   }
-
-  State.currentProfile.last_announcements_seen_at = seenAt;
-  Sidebar.updateAnnouncementBadge(0);
 }
 
 async function renderAnnouncements() {

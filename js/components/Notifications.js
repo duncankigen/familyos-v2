@@ -149,6 +149,25 @@ const Notifications = {
     Modal.open('Notifications', this.modalBody(), []);
   },
 
+  async markEntityTypeRead(entityType) {
+    if (!State.uid || !entityType) return;
+
+    const { error } = await DB.client
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', State.uid)
+      .eq('entity_type', entityType)
+      .eq('read', false);
+
+    if (error) {
+      console.warn('[Notifications] Failed to mark entity notifications read:', error);
+      return;
+    }
+
+    this.items = this.items.map((item) => item.entity_type === entityType ? { ...item, read: true } : item);
+    await this.refreshBadge();
+  },
+
   async openNotificationTarget(notificationId) {
     const notification = this.items.find((item) => item.id === notificationId);
     if (!notification) return;
@@ -201,6 +220,23 @@ const Notifications = {
     await this.notifyUsers([assignedUser], {
       title: 'Task assigned to you',
       message: `${task.title} was assigned to you${projectName ? ` in ${projectName}` : ''}.`,
+      type: 'info',
+      entity_type: 'task',
+      entity_id: task.id,
+    });
+  },
+
+  async notifyTaskComment(task, commenterName = 'A family member') {
+    if (!task?.id) return;
+
+    const recipients = [...new Set([task.assigned_user, task.created_by].filter(Boolean))]
+      .filter((userId) => userId !== State.uid);
+
+    if (!recipients.length) return;
+
+    await this.notifyUsers(recipients, {
+      title: 'New task comment',
+      message: `${commenterName} commented on "${task.title}".`,
       type: 'info',
       entity_type: 'task',
       entity_id: task.id,

@@ -23,6 +23,11 @@ alter table public.users add column if not exists phone text;
 alter table public.users add column if not exists role text default 'member';
 alter table public.users add column if not exists avatar_url text;
 alter table public.users add column if not exists is_active boolean default true;
+alter table public.users add column if not exists last_announcements_seen_at timestamptz default now();
+alter table public.users add column if not exists last_tasks_seen_at timestamptz default now();
+alter table public.users add column if not exists last_meetings_seen_at timestamptz default now();
+alter table public.users add column if not exists last_goals_seen_at timestamptz default now();
+alter table public.users add column if not exists last_ai_seen_at timestamptz default now();
 alter table public.users add column if not exists created_at timestamptz default now();
 
 update public.users u
@@ -47,6 +52,11 @@ set
   ),
   role = coalesce(nullif(trim(u.role), ''), 'member'),
   is_active = coalesce(u.is_active, true),
+  last_announcements_seen_at = coalesce(u.last_announcements_seen_at, now()),
+  last_tasks_seen_at = coalesce(u.last_tasks_seen_at, now()),
+  last_meetings_seen_at = coalesce(u.last_meetings_seen_at, now()),
+  last_goals_seen_at = coalesce(u.last_goals_seen_at, now()),
+  last_ai_seen_at = coalesce(u.last_ai_seen_at, now()),
   created_at = coalesce(u.created_at, now())
 from auth.users a
 where a.id = u.id
@@ -57,6 +67,11 @@ where a.id = u.id
     u.full_name is null or trim(u.full_name) = ''
     or u.role is null or trim(u.role) = ''
     or u.is_active is null
+    or u.last_announcements_seen_at is null
+    or u.last_tasks_seen_at is null
+    or u.last_meetings_seen_at is null
+    or u.last_goals_seen_at is null
+    or u.last_ai_seen_at is null
     or u.created_at is null
   );
 
@@ -64,6 +79,11 @@ alter table public.users alter column full_name set not null;
 alter table public.users alter column role set default 'member';
 alter table public.users alter column role set not null;
 alter table public.users alter column is_active set default true;
+alter table public.users alter column last_announcements_seen_at set default now();
+alter table public.users alter column last_tasks_seen_at set default now();
+alter table public.users alter column last_meetings_seen_at set default now();
+alter table public.users alter column last_goals_seen_at set default now();
+alter table public.users alter column last_ai_seen_at set default now();
 alter table public.users alter column created_at set default now();
 
 do $$
@@ -180,6 +200,11 @@ returns table (
   role text,
   avatar_url text,
   is_active boolean,
+  last_announcements_seen_at timestamptz,
+  last_tasks_seen_at timestamptz,
+  last_meetings_seen_at timestamptz,
+  last_goals_seen_at timestamptz,
+  last_ai_seen_at timestamptz,
   created_at timestamptz
 )
 language sql
@@ -197,6 +222,11 @@ as $$
     u.role,
     u.avatar_url,
     u.is_active,
+    u.last_announcements_seen_at,
+    u.last_tasks_seen_at,
+    u.last_meetings_seen_at,
+    u.last_goals_seen_at,
+    u.last_ai_seen_at,
     u.created_at
   from public.users u
   where u.id = auth.uid()

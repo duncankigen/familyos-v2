@@ -79,6 +79,13 @@ a { color: var(--accent); text-decoration: none; }
 }
 .sb-item svg     { width: 15px; height: 15px; flex-shrink: 0; opacity: .7; }
 .sb-item.active svg { opacity: 1; }
+.sb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex-shrink: 0;
+}
 
 .sb-footer { padding: 12px 14px; border-top: 1px solid var(--border); }
 .user-pill  { display: flex; align-items: center; gap: 9px; cursor: pointer; }

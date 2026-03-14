@@ -38,6 +38,22 @@ const NAV_ITEMS = [
   { page: 'ai',            label: 'AI Advisor',     icon: '<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2" stroke="currentColor" stroke-width="1.5" fill="none"/>' },
 ];
 
+const SECTION_INDICATORS = {
+  announcements: { kind: 'count', tone: 'b-red' },
+  tasks: { kind: 'count', tone: 'b-red' },
+  meetings: { kind: 'dot' },
+  goals: { kind: 'dot' },
+  ai: { kind: 'dot' },
+};
+
+const SECTION_SEEN_FIELDS = {
+  announcements: 'last_announcements_seen_at',
+  tasks: 'last_tasks_seen_at',
+  meetings: 'last_meetings_seen_at',
+  goals: 'last_goals_seen_at',
+  ai: 'last_ai_seen_at',
+};
+
 const Sidebar = {
   /** Inject the full sidebar HTML into <aside id="sidebar">. */
   render() {
@@ -46,17 +62,21 @@ const Sidebar = {
         return `<div class="sb-section">${item.section}</div>`;
       }
 
-      const count = item.page === 'announcements'
-        ? (State.unreadAnnouncements > 99 ? '99+' : String(State.unreadAnnouncements || ''))
-        : '';
+      const indicator = State.sectionIndicators[item.page] || {};
+      const config = SECTION_INDICATORS[item.page] || null;
+      let indicatorHtml = '';
+      if (config?.kind === 'count') {
+        const count = indicator.count > 99 ? '99+' : String(indicator.count || '');
+        indicatorHtml = `<span id="sb-${item.page}-indicator" class="badge ${config.tone}" style="margin-left:auto;${count ? '' : 'display:none;'}">${count}</span>`;
+      } else if (config?.kind === 'dot') {
+        indicatorHtml = `<span id="sb-${item.page}-indicator" class="sb-dot" style="margin-left:auto;${indicator.show ? '' : 'display:none;'}"></span>`;
+      }
 
       return `
         <div class="sb-item" data-page="${item.page}" onclick="nav('${item.page}')">
           <svg viewBox="0 0 16 16" fill="currentColor">${item.icon}</svg>
           <span>${item.label}</span>
-          ${item.page === 'announcements'
-            ? `<span id="sb-announcements-badge" class="badge b-red" style="margin-left:auto;${count ? '' : 'display:none;'}">${count}</span>`
-            : ''}
+          ${indicatorHtml}
         </div>`;
     }).join('');
 
@@ -90,24 +110,62 @@ const Sidebar = {
       </div>`;
   },
 
-  updateAnnouncementBadge(count) {
-    State.unreadAnnouncements = Number(count || 0);
-    const badge = document.getElementById('sb-announcements-badge');
-    if (!badge) return;
+  updateSectionIndicator(page, value = 0) {
+    const config = SECTION_INDICATORS[page];
+    if (!config) return;
 
-    if (State.unreadAnnouncements > 0) {
-      badge.style.display = 'inline-flex';
-      badge.textContent = State.unreadAnnouncements > 99 ? '99+' : String(State.unreadAnnouncements);
+    const el = document.getElementById(`sb-${page}-indicator`);
+    if (config.kind === 'count') {
+      const count = Number(value || 0);
+      State.sectionIndicators[page] = { count, show: count > 0 };
+      if (!el) return;
+      if (count > 0) {
+        el.style.display = 'inline-flex';
+        el.textContent = count > 99 ? '99+' : String(count);
+        return;
+      }
+      el.style.display = 'none';
+      el.textContent = '';
       return;
     }
 
-    badge.style.display = 'none';
-    badge.textContent = '';
+    const show = Boolean(value);
+    State.sectionIndicators[page] = { count: show ? 1 : 0, show };
+    if (!el) return;
+    el.style.display = show ? 'inline-flex' : 'none';
+  },
+
+  async markSectionSeen(page) {
+    const field = SECTION_SEEN_FIELDS[page];
+    if (!field || !State.uid || !State.currentProfile) return;
+
+    const seenAt = new Date().toISOString();
+    const { error } = await DB.client
+      .from('users')
+      .update({ [field]: seenAt })
+      .eq('id', State.uid);
+
+    if (error) {
+      console.warn(`[Sidebar] Failed to mark ${page} as seen:`, error);
+      return;
+    }
+
+    State.currentProfile[field] = seenAt;
+    this.updateSectionIndicator(page, 0);
+
+    if (page === 'announcements') {
+      State.unreadAnnouncements = 0;
+      await Notifications.markEntityTypeRead('announcement');
+    }
+
+    if (page === 'tasks') {
+      await Notifications.markEntityTypeRead('task');
+    }
   },
 
   async refreshAnnouncementBadge() {
     if (!State.supabase || !State.fid || !State.uid || !State.currentProfile) {
-      this.updateAnnouncementBadge(0);
+      this.updateSectionIndicator('announcements', 0);
       return;
     }
 
@@ -128,7 +186,64 @@ const Sidebar = {
       return;
     }
 
-    this.updateAnnouncementBadge(count || 0);
+    State.unreadAnnouncements = Number(count || 0);
+    this.updateSectionIndicator('announcements', count || 0);
+  },
+
+  async refreshTaskIndicator() {
+    if (!State.uid || !DB.client) {
+      this.updateSectionIndicator('tasks', 0);
+      return;
+    }
+
+    const { count, error } = await DB.client
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', State.uid)
+      .eq('entity_type', 'task')
+      .eq('read', false);
+
+    if (error) {
+      console.warn('[Sidebar] Failed to load task indicator:', error);
+      return;
+    }
+
+    this.updateSectionIndicator('tasks', count || 0);
+  },
+
+  async refreshDotIndicator(page, tableName) {
+    const field = SECTION_SEEN_FIELDS[page];
+    if (!State.fid || !State.currentProfile || !field) {
+      this.updateSectionIndicator(page, 0);
+      return;
+    }
+
+    let query = DB.client
+      .from(tableName)
+      .select('id', { count: 'exact', head: true })
+      .eq('family_id', State.fid);
+
+    if (State.currentProfile[field]) {
+      query = query.gt('created_at', State.currentProfile[field]);
+    }
+
+    const { count, error } = await query;
+    if (error) {
+      console.warn(`[Sidebar] Failed to load ${page} indicator:`, error);
+      return;
+    }
+
+    this.updateSectionIndicator(page, Number(count || 0) > 0);
+  },
+
+  async refreshSectionIndicators() {
+    await Promise.all([
+      this.refreshAnnouncementBadge(),
+      this.refreshTaskIndicator(),
+      this.refreshDotIndicator('meetings', 'meetings'),
+      this.refreshDotIndicator('goals', 'family_goals'),
+      this.refreshDotIndicator('ai', 'ai_insights'),
+    ]);
   },
 
   toggle() {

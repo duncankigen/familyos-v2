@@ -66,6 +66,10 @@ async function renderMeetings() {
         </div>
       </div>
     </div>`;
+
+  Sidebar.markSectionSeen('meetings').catch((error) => {
+    console.warn('[Meetings] Failed to mark meetings as seen:', error);
+  });
 }
 
 function openAddMeeting() {

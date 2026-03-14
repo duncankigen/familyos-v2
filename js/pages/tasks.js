@@ -271,6 +271,10 @@ async function renderTasks() {
           </div>`).join('')}
       </div>
     </div>`;
+
+  Sidebar.markSectionSeen('tasks').catch((error) => {
+    console.warn('[Tasks] Failed to mark tasks as seen:', error);
+  });
 }
 
 async function updateTaskStatus(taskId, status) {
@@ -395,6 +399,12 @@ async function submitTaskComment(taskId) {
   const list = document.getElementById('task-comments-list');
   if (list) {
     list.innerHTML = TasksPage.commentsByTaskId[taskId].map(taskCommentMarkup).join('');
+  }
+
+  const task = TasksPage.tasks.find((item) => item.id === taskId);
+  if (task) {
+    const commenterName = State.currentProfile?.full_name || TasksPage.membersById[State.uid]?.full_name || 'A family member';
+    await Notifications.notifyTaskComment(task, commenterName);
   }
 }
 

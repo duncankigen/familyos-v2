@@ -64,6 +64,10 @@ async function renderGoals() {
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Completed</div>
         <div class="g3">${completed.map(goalCard).join('')}</div>` : ''}
     </div>`;
+
+  Sidebar.markSectionSeen('goals').catch((error) => {
+    console.warn('[Goals] Failed to mark goals as seen:', error);
+  });
 }
 
 function openAddGoal() {

@@ -69,6 +69,10 @@ async function renderAI() {
 
       </div>
     </div>`;
+
+  Sidebar.markSectionSeen('ai').catch((error) => {
+    console.warn('[AI] Failed to mark AI insights as seen:', error);
+  });
 }
 
 // ── Core AI functions ──────────────────────────────
