@@ -30,7 +30,7 @@ async function renderReports() {
     : Promise.resolve({ data: [] });
 
   const [{ data: contrib }, { data: exp }, { data: members }, { data: vendors }, { data: assets }, { data: farmOutputs }, { data: farmInputs }, { data: activities }, { data: meetings }, { data: goals }, { data: documents }, { data: insights }] = await Promise.all([
-    sb.from('contributions').select('amount,created_at,users(full_name)').eq('family_id', fid),
+    sb.from('contributions').select('amount,created_at,user_id').eq('family_id', fid),
     sb.from('expenses').select('amount,created_at,category').eq('family_id', fid),
     sb.from('users').select('id,full_name').eq('family_id', fid),
     sb.from('vendors').select('id,name,total_paid,total_jobs').eq('family_id', fid),
@@ -67,8 +67,9 @@ async function renderReports() {
 
   // Top contributors
   const memberMap = {};
+  const membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
   (contrib || []).forEach(c => {
-    const n = c.users?.full_name || 'Unknown';
+    const n = membersById[c.user_id]?.full_name || 'Unknown';
     memberMap[n] = (memberMap[n] || 0) + Number(c.amount);
   });
   const topContrib = Object.entries(memberMap).sort((a, b) => b[1] - a[1]).slice(0, 5);

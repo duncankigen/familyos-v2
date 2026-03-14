@@ -14,6 +14,10 @@ function aiFunctionConfigured() {
   return !!window.RuntimeConfig?.aiEdgeFunctionUrl;
 }
 
+const AIPage = {
+  insightsBusy: false,
+};
+
 function insightTypeColor(insightType) {
   const typeMap = {
     task_warning: 'red',
@@ -137,6 +141,16 @@ async function loadAIServiceResponse(payload) {
   return data;
 }
 
+function setAIInsightsBusy(isBusy) {
+  AIPage.insightsBusy = !!isBusy;
+  const btn = document.getElementById('ai-generate-btn');
+  if (!btn) return;
+  btn.disabled = AIPage.insightsBusy;
+  btn.innerHTML = AIPage.insightsBusy
+    ? '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px;display:inline-block;vertical-align:middle;"></span>Generating...'
+    : 'Generate Fresh Insights';
+}
+
 async function renderAI() {
   setTopbar('AI Advisor');
   const { data: insights } = await DB.client
@@ -174,7 +188,7 @@ async function renderAI() {
                 </div>
               </div>`
             : ''}
-          ${canGenerateAIInsights() ? `<button class="btn btn-sm" onclick="generateInsights()">Generate Fresh Insights</button>` : ''}
+          ${canGenerateAIInsights() ? `<button id="ai-generate-btn" class="btn btn-sm" onclick="generateInsights()">Generate Fresh Insights</button>` : ''}
         </div>
 
         <div>
@@ -328,42 +342,47 @@ async function generateInsights() {
   if (!canGenerateAIInsights()) return;
   const sb = DB.client;
   const fid = State.fid;
+  setAIInsightsBusy(true);
 
-  const context = await _buildContext();
-  let drafts = [];
+  try {
+    const context = await _buildContext();
+    let drafts = [];
 
-  if (aiFunctionConfigured()) {
-    try {
-      const data = await loadAIServiceResponse({
-        mode: 'insights',
-        question: 'Generate fresh family insights',
-        familyContext: context,
-      });
-      drafts = normalizeInsightDrafts(data?.insights || []);
-    } catch (error) {
-      console.warn('[AI] Provider-backed insight generation failed, using local fallback:', error);
+    if (aiFunctionConfigured()) {
+      try {
+        const data = await loadAIServiceResponse({
+          mode: 'insights',
+          question: 'Generate fresh family insights',
+          familyContext: context,
+        });
+        drafts = normalizeInsightDrafts(data?.insights || []);
+      } catch (error) {
+        console.warn('[AI] Provider-backed insight generation failed, using local fallback:', error);
+      }
     }
-  }
 
-  if (!drafts.length) {
-    drafts = buildLocalInsights(context);
-  }
+    if (!drafts.length) {
+      drafts = buildLocalInsights(context);
+    }
 
-  if (!drafts.length) {
-    alert('No new insights to generate based on current data.');
-    return;
-  }
+    if (!drafts.length) {
+      alert('No new insights to generate based on current data.');
+      return;
+    }
 
-  await replaceExistingInsights(drafts.map((item) => item.insight_type));
-  const { error } = await sb.from('ai_insights').insert(drafts.map((item) => ({
-    family_id: fid,
-    ...item,
-  })));
-  if (error) {
-    alert(error.message || 'Unable to save AI insights right now.');
-    return;
+    await replaceExistingInsights(drafts.map((item) => item.insight_type));
+    const { error } = await sb.from('ai_insights').insert(drafts.map((item) => ({
+      family_id: fid,
+      ...item,
+    })));
+    if (error) {
+      alert(error.message || 'Unable to save AI insights right now.');
+      return;
+    }
+    renderPage('ai');
+  } finally {
+    setAIInsightsBusy(false);
   }
-  renderPage('ai');
 }
 
 function buildLocalInsights(context) {
@@ -419,8 +438,8 @@ function buildLocalInsights(context) {
 async function _buildContext() {
   const sb = DB.client;
   const fid = State.fid;
-  const [{ data: contrib }, { data: exp }, { data: tasks }, { data: goals }, { data: meetings }, { data: docs }, { data: projects }, { data: vendors }, { data: assets }, { data: fees }] = await Promise.all([
-    sb.from('contributions').select('amount,contribution_type,created_at,users(full_name)').eq('family_id', fid),
+  const [{ data: contrib }, { data: exp }, { data: tasks }, { data: goals }, { data: meetings }, { data: docs }, { data: projects }, { data: vendors }, { data: assets }, { data: fees }, { data: members }, { data: announcements }, { data: comments }] = await Promise.all([
+    sb.from('contributions').select('amount,contribution_type,created_at,user_id').eq('family_id', fid),
     sb.from('expenses').select('amount,category,created_at').eq('family_id', fid),
     sb.from('tasks').select('title,status,deadline,priority,created_at').eq('family_id', fid).neq('status', 'completed').order('deadline', { ascending: true }).limit(20),
     sb.from('family_goals').select('title,target_amount,current_amount,status').eq('family_id', fid),
@@ -430,6 +449,9 @@ async function _buildContext() {
     sb.from('vendors').select('id,name,total_paid,total_jobs').eq('family_id', fid),
     sb.from('assets').select('id,name,asset_type,status,estimated_value,monthly_income').eq('family_id', fid),
     sb.from('school_fees').select('student_id,total_fee,paid_amount').eq('family_id', fid),
+    sb.from('users').select('id,full_name,role').eq('family_id', fid).eq('is_active', true),
+    sb.from('announcements').select('title,created_at,is_pinned').eq('family_id', fid).eq('is_archived', false).order('created_at', { ascending: false }).limit(5),
+    sb.from('task_comments').select('task_id,created_at,user_id').eq('family_id', fid).order('created_at', { ascending: false }).limit(20),
   ]);
   const farmingProjectIds = (projects || []).filter((project) => project.project_type === 'farming').map((project) => project.id);
   const [{ data: farmOutputs }, { data: farmInputs }, { data: activities }, { data: livestock }] = await Promise.all([
@@ -447,6 +469,7 @@ async function _buildContext() {
       : Promise.resolve({ data: [] }),
   ]);
 
+  const membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
   const totalContributions = (contrib || []).reduce((sum, item) => sum + Number(item.amount), 0);
   const totalExpenses = (exp || []).reduce((sum, item) => sum + Number(item.amount), 0);
   const expenseByCategory = {};
@@ -456,7 +479,7 @@ async function _buildContext() {
   });
   const contributorTotals = {};
   (contrib || []).forEach((item) => {
-    const name = item.users?.full_name || 'Unknown';
+    const name = membersById[item.user_id]?.full_name || 'Unknown';
     contributorTotals[name] = (contributorTotals[name] || 0) + Number(item.amount || 0);
   });
   const overdueTasks = (tasks || []).filter((task) => task.deadline && new Date(task.deadline) < new Date());
@@ -539,6 +562,22 @@ async function _buildContext() {
       }, {}),
       restricted: (docs || []).filter((doc) => doc.access_level === 'admins').length,
     },
+    members: {
+      totalCount: (members || []).length,
+      byRole: (members || []).reduce((acc, member) => {
+        acc[member.role] = (acc[member.role] || 0) + 1;
+        return acc;
+      }, {}),
+      topContributors: Object.entries(contributorTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, amount]) => ({ name, amount })),
+    },
+    announcements: {
+      totalRecent: (announcements || []).length,
+      pinnedCount: (announcements || []).filter((item) => item.is_pinned).length,
+      recent: announcements || [],
+    },
     projects: {
       totalCount: (projects || []).length,
       activeCount: (projects || []).filter((project) => project.status === 'active').length,
@@ -598,6 +637,10 @@ async function _buildContext() {
     schoolFees: {
       outstandingTotal,
       unpaidStudents: (fees || []).filter((fee) => Number(fee.total_fee || 0) > Number(fee.paid_amount || 0)).length,
+    },
+    comments: {
+      recentCount: (comments || []).length,
+      activeTaskIds: [...new Set((comments || []).map((comment) => comment.task_id).filter(Boolean))].length,
     },
   };
 }
