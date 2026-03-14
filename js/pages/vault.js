@@ -6,6 +6,7 @@
 
 const VaultPage = {
   docs: [],
+  search: '',
 };
 
 function canManageDocuments() {
@@ -107,6 +108,17 @@ async function renderVault() {
   }
 
   VaultPage.docs = docs || [];
+  const query = VaultPage.search.trim().toLowerCase();
+  const visibleDocs = VaultPage.docs.filter((doc) => {
+    if (!query) return true;
+    return [
+      doc.title,
+      doc.category,
+      doc.file_name,
+      doc.access_level,
+      doc.users?.full_name,
+    ].some((value) => String(value || '').toLowerCase().includes(query));
+  });
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -122,13 +134,17 @@ async function renderVault() {
       </div>
 
       <div class="card">
+        <div class="form-group mb12">
+          <label class="form-label">Search Vault</label>
+          <input class="form-input" placeholder="Search by title, category, file name, or member" value="${escapeHtml(VaultPage.search)}" oninput="setVaultSearch(this.value)"/>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr><th>Document</th><th>Category</th><th>Access</th><th>Added By</th><th>Date</th><th></th></tr>
             </thead>
             <tbody>
-              ${VaultPage.docs.map((doc) => `
+              ${visibleDocs.map((doc) => `
                 <tr>
                   <td>
                     <div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>
@@ -148,7 +164,7 @@ async function renderVault() {
             </tbody>
           </table>
         </div>
-        ${!VaultPage.docs.length ? empty('No documents in vault yet') : ''}
+        ${!visibleDocs.length ? empty(VaultPage.docs.length ? 'No documents match your search' : 'No documents in vault yet') : ''}
       </div>
 
       <div class="card" style="margin-top:14px;background:var(--bg3);">
@@ -157,6 +173,11 @@ async function renderVault() {
         </div>
       </div>
     </div>`;
+}
+
+function setVaultSearch(value) {
+  VaultPage.search = value || '';
+  renderPage('vault');
 }
 
 function openAddDocument() {

@@ -29,7 +29,7 @@ async function renderReports() {
     ? sb.from('project_activities').select('project_id,cost').in('project_id', farmingProjectIds)
     : Promise.resolve({ data: [] });
 
-  const [{ data: contrib }, { data: exp }, { data: members }, { data: vendors }, { data: assets }, { data: farmOutputs }, { data: farmInputs }, { data: activities }] = await Promise.all([
+  const [{ data: contrib }, { data: exp }, { data: members }, { data: vendors }, { data: assets }, { data: farmOutputs }, { data: farmInputs }, { data: activities }, { data: meetings }, { data: goals }, { data: documents }, { data: insights }] = await Promise.all([
     sb.from('contributions').select('amount,created_at,users(full_name)').eq('family_id', fid),
     sb.from('expenses').select('amount,created_at,category').eq('family_id', fid),
     sb.from('users').select('id,full_name').eq('family_id', fid),
@@ -38,6 +38,10 @@ async function renderReports() {
     outputQuery,
     inputQuery,
     activityQuery,
+    sb.from('meetings').select('id,status').eq('family_id', fid),
+    sb.from('family_goals').select('id,status').eq('family_id', fid),
+    sb.from('documents').select('id,access_level').eq('family_id', fid),
+    sb.from('ai_insights').select('id,is_read').eq('family_id', fid),
   ]);
 
   // Build 12-month rolling data
@@ -87,6 +91,9 @@ async function renderReports() {
   const farmInputCost = (farmInputs || []).reduce((sum, input) => sum + (Number(input.quantity || 0) * Number(input.cost_per_unit || 0)), 0);
   const farmActivityCost = (activities || []).reduce((sum, activity) => sum + Number(activity.cost || 0), 0);
   const farmCost = farmInputCost + farmActivityCost;
+  const scheduledMeetings = (meetings || []).filter((meeting) => meeting.status === 'scheduled').length;
+  const activeGoals = (goals || []).filter((goal) => goal.status === 'active').length;
+  const unreadInsights = (insights || []).filter((insight) => !insight.is_read).length;
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -99,6 +106,17 @@ async function renderReports() {
           <div class="metric-value" style="color:var(--accent);">KES ${fmt(totalC - (exp || []).reduce((a, b) => a + Number(b.amount), 0))}</div></div>
         <div class="metric-card"><div class="metric-label">Contributors</div>
           <div class="metric-value">${Object.keys(memberMap).length}</div></div>
+      </div>
+
+      <div class="g4 mb16">
+        <div class="metric-card"><div class="metric-label">Scheduled Meetings</div>
+          <div class="metric-value">${scheduledMeetings}</div></div>
+        <div class="metric-card"><div class="metric-label">Active Goals</div>
+          <div class="metric-value">${activeGoals}</div></div>
+        <div class="metric-card"><div class="metric-label">Vault Documents</div>
+          <div class="metric-value">${(documents || []).length}</div></div>
+        <div class="metric-card"><div class="metric-label">Unread AI Insights</div>
+          <div class="metric-value">${unreadInsights}</div></div>
       </div>
 
       <!-- Charts row -->

@@ -7,6 +7,7 @@ const DirectoryPage = {
   vendors: [],
   taskCountByVendor: {},
   expenseCountByVendor: {},
+  search: '',
 };
 
 function canManageVendors() {
@@ -81,7 +82,19 @@ async function renderDirectory() {
   });
 
   const grouped = {};
-  DirectoryPage.vendors.forEach((vendor) => {
+  DirectoryPage.vendors
+    .filter((vendor) => {
+      const query = DirectoryPage.search.trim().toLowerCase();
+      if (!query) return true;
+      return [
+        vendor.name,
+        vendor.category,
+        vendor.phone,
+        vendor.email,
+        vendor.notes,
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+    })
+    .forEach((vendor) => {
     if (!grouped[vendor.category]) grouped[vendor.category] = [];
     grouped[vendor.category].push(vendor);
   });
@@ -103,6 +116,13 @@ async function renderDirectory() {
           <div class="metric-value">${DirectoryPage.vendors.length}</div></div>
         <div class="metric-card"><div class="metric-label">Categories</div>
           <div class="metric-value">${Object.keys(grouped).length}</div></div>
+      </div>
+
+      <div class="card mb16">
+        <div class="form-group">
+          <label class="form-label">Search Vendors</label>
+          <input class="form-input" placeholder="Search by name, category, phone, email, or notes" value="${escapeHtml(DirectoryPage.search)}" oninput="setVendorSearch(this.value)"/>
+        </div>
       </div>
 
       ${Object.entries(grouped).map(([cat, list]) => `
@@ -134,6 +154,11 @@ async function renderDirectory() {
 
       ${!DirectoryPage.vendors.length ? `<div class="card">${empty('No vendors added yet')}</div>` : ''}
     </div>`;
+}
+
+function setVendorSearch(value) {
+  DirectoryPage.search = value || '';
+  renderPage('directory');
 }
 
 function openAddVendor() {

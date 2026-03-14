@@ -10,6 +10,7 @@
  *
  * SECRETS (Supabase → Settings → Edge Function Secrets):
  *   ANTHROPIC_API_KEY = sk-ant-...
+ *   ANTHROPIC_MODEL   = optional override
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -57,6 +58,8 @@ Family context:
 
 Provide specific, actionable, and culturally aware advice relevant to East African families managing shared resources. Be concise (under 200 words). Use KES currency. Focus on practical next steps.`;
 
+    const model = Deno.env.get("ANTHROPIC_MODEL") || "claude-3-5-haiku-20241022";
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -65,7 +68,7 @@ Provide specific, actionable, and culturally aware advice relevant to East Afric
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model:      "claude-3-5-haiku-20241022",
+        model,
         max_tokens: 400,
         system:     systemPrompt,
         messages:   [{ role: "user", content: question }],
@@ -75,9 +78,14 @@ Provide specific, actionable, and culturally aware advice relevant to East Afric
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Anthropic API error:", data);
+      const detailMessage =
+        data?.error?.message ||
+        data?.message ||
+        data?.error ||
+        JSON.stringify(data);
+      console.error("Anthropic API error:", detailMessage);
       return new Response(
-        JSON.stringify({ error: "AI service error", details: data }),
+        JSON.stringify({ error: `AI service error: ${detailMessage}`, details: data, model }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } }
       );
     }

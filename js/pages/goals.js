@@ -4,6 +4,10 @@
  * Family goal tracker with progress bars.
  */
 
+const GoalsPage = {
+  goals: [],
+};
+
 function canManageGoals() {
   return ['admin', 'treasurer'].includes(State.currentProfile?.role);
 }
@@ -24,6 +28,8 @@ async function renderGoals() {
       </div>`;
     return;
   }
+
+  GoalsPage.goals = goals || [];
 
   const active = (goals || []).filter((goal) => goal.status === 'active');
   const achieved = (goals || []).filter((goal) => goal.status === 'achieved');
@@ -53,12 +59,14 @@ async function renderGoals() {
           <div style="display:flex;gap:6px;margin-top:10px;">
             <button class="btn btn-sm btn-primary" onclick="openUpdateGoal('${goal.id}', ${currentAmount})">Update Progress</button>
             ${goal.status !== 'achieved' ? `<button class="btn btn-sm" onclick="markGoalAchieved('${goal.id}')">Mark Achieved</button>` : ''}
+            <button class="btn btn-sm" onclick="openManageGoal('${goal.id}')">Manage</button>
           </div>` : ''}
       </div>`;
   }
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      ${canManageGoals() ? `<div class="card mb16" style="background:var(--bg3);"><div style="font-size:12px;color:var(--text2);">Use <strong>Manage</strong> to pause, cancel, or update the goal details while keeping the current layout unchanged.</div></div>` : ''}
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Active Goals</div>
           <div class="metric-value" style="color:var(--accent);">${active.length}</div></div>
@@ -160,6 +168,62 @@ async function markGoalAchieved(goalId) {
     return;
   }
   renderPage('goals');
+}
+
+function openManageGoal(goalId) {
+  if (!canManageGoals()) return;
+  const goal = GoalsPage.goals.find((item) => item.id === goalId);
+  if (!goal) return;
+
+  Modal.open('Manage Goal', `
+    <div class="form-group"><label class="form-label">Goal Title</label>
+      <input id="gm-title" class="form-input" value="${escapeHtml(goal.title || '')}"/></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="gm-desc" class="form-textarea">${escapeHtml(goal.description || '')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Target Amount (KES)</label>
+        <input id="gm-target" class="form-input" type="number" value="${Number(goal.target_amount || 0)}"/></div>
+      <div class="form-group"><label class="form-label">Current Amount (KES)</label>
+        <input id="gm-current" class="form-input" type="number" value="${Number(goal.current_amount || 0)}"/></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Target Date</label>
+        <input id="gm-deadline" class="form-input" type="date" value="${goal.deadline || ''}"/></div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="gm-status" class="form-select">
+          ${['active', 'paused', 'cancelled', 'achieved'].map((status) => `
+            <option value="${status}" ${goal.status === status ? 'selected' : ''}>${status.replace('_', ' ')}</option>
+          `).join('')}
+        </select></div>
+    </div>
+    <p id="goal-manage-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
+    hideErr('goal-manage-err');
+    const title = document.getElementById('gm-title')?.value.trim() || '';
+    const targetAmount = parseFloat(document.getElementById('gm-target')?.value || '');
+    const currentAmount = parseFloat(document.getElementById('gm-current')?.value || '');
+    if (!title || !targetAmount || isNaN(currentAmount)) {
+      showErr('goal-manage-err', 'Title, target amount, and current amount are required.');
+      return;
+    }
+
+    const { error } = await DB.client.from('family_goals').update({
+      title,
+      description: document.getElementById('gm-desc')?.value.trim() || null,
+      target_amount: targetAmount,
+      current_amount: currentAmount,
+      deadline: document.getElementById('gm-deadline')?.value || null,
+      status: document.getElementById('gm-status')?.value || 'active',
+    }).eq('id', goalId);
+
+    if (error) {
+      showErr('goal-manage-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('goals');
+  }}]);
 }
 
 Router.register('goals', renderGoals);

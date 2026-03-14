@@ -13,7 +13,7 @@ function meetingButtonBar(meeting) {
   if (!canManageMeetings()) return '';
   return `
     <div style="display:flex;gap:6px;margin-top:8px;">
-      <button class="btn btn-sm" onclick="openAddVote('${meeting.id}')">+ Vote</button>
+      <button class="btn btn-sm" onclick="openAddVote('${meeting.id}')">Create Vote</button>
       <button class="btn btn-sm" onclick="openAddMinutes('${meeting.id}', \`${escapeHtml(meeting.minutes || '').replace(/`/g, '&#96;')}\`)">Minutes</button>
     </div>`;
 }
@@ -36,12 +36,18 @@ async function renderMeetings() {
     return;
   }
 
+  const meetingById = {};
+  (meetings || []).forEach((meeting) => {
+    meetingById[meeting.id] = meeting;
+  });
+
   document.getElementById('page-content').innerHTML = `
     <div class="content">
       <div class="g2 mb16">
 
         <div class="card">
           <div class="card-title">Meetings</div>
+          ${canManageMeetings() ? `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Schedule a meeting first, then create votes from that meeting card.</div>` : ''}
           <div class="flex-col">
             ${(meetings || []).map((meeting) => `
               <div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
@@ -56,12 +62,13 @@ async function renderMeetings() {
                 ${meeting.minutes ? `<div style="font-size:11px;color:var(--text3);margin-top:4px;">Minutes available</div>` : ''}
                 ${meetingButtonBar(meeting)}
               </div>`).join('')}
-            ${!(meetings || []).length ? empty('No meetings scheduled') : ''}
+            ${!(meetings || []).length ? empty(canManageMeetings() ? 'No meetings scheduled yet. Create one to start votes and minutes.' : 'No meetings scheduled') : ''}
           </div>
         </div>
 
         <div class="card">
           <div class="card-title">Active Votes</div>
+          ${canManageMeetings() ? `<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">Votes are opened from the meeting cards and can be closed here once the family has voted.</div>` : ''}
           <div class="flex-col">
             ${(votes || []).map((vote) => {
               const responses = vote.vote_responses || [];
@@ -71,10 +78,12 @@ async function renderMeetings() {
               const myVote = responses.find((item) => item.user_id === State.uid);
               const deadlinePassed = vote.deadline ? new Date(vote.deadline) < new Date() : false;
               const votingDisabled = !!myVote || deadlinePassed;
+              const parentMeeting = meetingById[vote.meeting_id];
 
               return `
                 <div style="padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);">
                   <div style="font-size:13px;font-weight:700;margin-bottom:8px;">${escapeHtml(vote.proposal)}</div>
+                  ${parentMeeting ? `<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Meeting: ${escapeHtml(parentMeeting.title)}</div>` : ''}
                   ${vote.description ? `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">${escapeHtml(vote.description)}</div>` : ''}
                   <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">
                     Yes ${yes} · No ${no} · Abstain ${abstain}
@@ -86,6 +95,7 @@ async function renderMeetings() {
                     <button class="btn btn-sm" ${votingDisabled ? 'disabled' : ''} style="background:var(--success-bg);color:var(--success);" onclick="castVote('${vote.id}','yes')">Yes</button>
                     <button class="btn btn-sm" ${votingDisabled ? 'disabled' : ''} style="background:var(--danger-bg);color:var(--danger);" onclick="castVote('${vote.id}','no')">No</button>
                     <button class="btn btn-sm" ${votingDisabled ? 'disabled' : ''} onclick="castVote('${vote.id}','abstain')">Abstain</button>
+                    ${canManageMeetings() ? `<button class="btn btn-sm" onclick="updateVoteStatus('${vote.id}','closed')">Close Vote</button>` : ''}
                   </div>
                 </div>`;
             }).join('')}
@@ -211,6 +221,16 @@ async function castVote(voteId, response) {
     return;
   }
 
+  renderPage('meetings');
+}
+
+async function updateVoteStatus(voteId, status) {
+  if (!canManageMeetings()) return;
+  const { error } = await DB.client.from('votes').update({ status }).eq('id', voteId);
+  if (error) {
+    alert(error.message || 'Unable to update this vote right now.');
+    return;
+  }
   renderPage('meetings');
 }
 
