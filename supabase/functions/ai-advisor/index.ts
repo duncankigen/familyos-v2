@@ -109,21 +109,24 @@ function buildAnswerPrompt(familyContext: any) {
 
 Use the provided family context only. Be practical, specific, and grounded in the numbers you are given. If a relevant area has little or no data, say that clearly instead of inventing detail.
 
-Respond in this exact structure:
+Write like a thoughtful, practical family advisor speaking naturally to the user. The answer should feel conversational, not robotic.
+
+Format rules:
+- Use plain text only.
+- Do not use markdown, bold markers, asterisks, or code formatting.
+- Use short section headings exactly as:
 Situation
-- 2 to 4 concise bullets explaining what the data says now
-
-Recommended Actions
-- 4 to 6 practical next steps, ordered by impact
-
+Recommended actions
 Watch-outs
-- 2 to 4 short bullets highlighting risks, pressure points, or missing data
+- Under each heading, write short natural sentences or short hyphen bullets.
+- Keep the answer readable and helpful, not overly stiff.
 
 Guidance:
-- Reference real figures from the context, especially KES amounts, counts, deadlines, and project/farm signals.
-- Connect finances, tasks, goals, vendors, assets, school fees, and farming where relevant.
-- Keep the answer detailed enough to feel advisory, but still readable.
+- Reference real figures from the context, especially KES amounts, counts, deadlines, and project or farm signals.
+- Connect finances, tasks, goals, vendors, assets, school fees, members, announcements, and farming where relevant.
+- Keep the answer detailed enough to feel advisory, but still easy to scan.
 - Avoid filler greetings and avoid one-line generic encouragement.
+- Sound like a human advisor, not a report generator.
 
 Core financial snapshot:
 - Total Contributions: KES ${totalContributions.toLocaleString()}
