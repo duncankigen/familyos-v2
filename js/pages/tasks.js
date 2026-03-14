@@ -4,27 +4,57 @@
  * Task tracker with status columns: pending / in_progress / completed.
  */
 
+const TasksPage = {
+  tasks: [],
+  membersById: {},
+  projectsById: {},
+};
+
+function canCreateTasks() {
+  return ['admin', 'project_manager', 'treasurer'].includes(State.currentProfile?.role);
+}
+
+function canUpdateTask(task) {
+  return task?.assigned_user === State.uid || ['admin', 'project_manager'].includes(State.currentProfile?.role);
+}
+
+function taskStatusGroup(task) {
+  return task.status === 'overdue' ? 'pending' : task.status;
+}
+
 async function renderTasks() {
-  setTopbar('Tasks', `<button class="btn btn-primary btn-sm" onclick="openAddTask()">+ Add Task</button>`);
+  setTopbar('Tasks', canCreateTasks() ? `<button class="btn btn-primary btn-sm" onclick="openAddTask()">+ Add Task</button>` : '');
   const sb = DB.client;
 
-  const [{ data: tasks }, { data: members }] = await Promise.all([
-    sb.from('tasks').select('*,users(full_name),projects(name)').eq('family_id', State.fid).order('deadline'),
+  const [{ data: tasks, error: taskError }, { data: members, error: memberError }, { data: projects, error: projectError }] = await Promise.all([
+    sb.from('tasks').select('id,family_id,project_id,title,description,assigned_user,status,priority,deadline,completed_at,created_by,created_at').eq('family_id', State.fid).order('deadline'),
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
+    sb.from('projects').select('id,name').eq('family_id', State.fid),
   ]);
 
+  if (taskError || memberError || projectError) {
+    console.error('[Tasks] Failed to load:', taskError || memberError || projectError);
+    document.getElementById('page-content').innerHTML = `
+      <div class="content">
+        <div class="card">${empty('Unable to load tasks right now')}</div>
+      </div>`;
+    return;
+  }
+
+  TasksPage.tasks = tasks || [];
+  TasksPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
+  TasksPage.projectsById = Object.fromEntries((projects || []).map((project) => [project.id, project]));
+
   const cols = [
-    { key: 'pending',     label: 'Pending',     color: 'var(--warning)' },
-    { key: 'in_progress', label: 'In Progress',  color: 'var(--accent)'  },
-    { key: 'completed',   label: 'Completed',    color: 'var(--success)' },
+    { key: 'pending', label: 'Pending', color: 'var(--warning)' },
+    { key: 'in_progress', label: 'In Progress', color: 'var(--accent)' },
+    { key: 'completed', label: 'Completed', color: 'var(--success)' },
   ];
 
-  const grouped = {};
-  cols.forEach(c => { grouped[c.key] = []; });
-  (tasks || []).forEach(t => {
-    const bucket = grouped[t.status] || [];
-    bucket.push(t);
-    grouped[t.status] = bucket;
+  const grouped = Object.fromEntries(cols.map((col) => [col.key, []]));
+  TasksPage.tasks.forEach((task) => {
+    const bucket = taskStatusGroup(task);
+    if (grouped[bucket]) grouped[bucket].push(task);
   });
 
   const now = new Date();
@@ -33,40 +63,42 @@ async function renderTasks() {
     <div class="content">
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Total</div>
-          <div class="metric-value">${(tasks || []).length}</div></div>
+          <div class="metric-value">${TasksPage.tasks.length}</div></div>
         <div class="metric-card"><div class="metric-label">Pending</div>
           <div class="metric-value" style="color:var(--warning);">${(grouped.pending || []).length}</div></div>
         <div class="metric-card"><div class="metric-label">In Progress</div>
           <div class="metric-value" style="color:var(--accent);">${(grouped.in_progress || []).length}</div></div>
         <div class="metric-card"><div class="metric-label">Overdue</div>
-          <div class="metric-value" style="color:var(--danger);">${(tasks || []).filter(t => t.deadline && new Date(t.deadline) < now && t.status !== 'completed').length}</div></div>
+          <div class="metric-value" style="color:var(--danger);">${TasksPage.tasks.filter((task) => task.deadline && new Date(task.deadline) < now && task.status !== 'completed').length}</div></div>
       </div>
 
       <div class="g3">
-        ${cols.map(col => `
+        ${cols.map((col) => `
           <div>
             <div style="font-size:11px;font-weight:700;color:${col.color};text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">
               ${col.label} (${(grouped[col.key] || []).length})
             </div>
             <div class="flex-col">
-              ${(grouped[col.key] || []).map(t => {
-                const isOverdue = t.deadline && new Date(t.deadline) < now && t.status !== 'completed';
+              ${(grouped[col.key] || []).map((task) => {
+                const isOverdue = task.deadline && new Date(task.deadline) < now && task.status !== 'completed';
                 return `
-                  <div class="card" style="border-left:3px solid ${col.color};">
-                    <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${t.title}</div>
+                  <div class="card" style="border-left:3px solid ${isOverdue ? 'var(--danger)' : col.color};">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:6px;">${escapeHtml(task.title)}</div>
                     <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">
-                      ${t.users?.full_name ? '👤 ' + t.users.full_name : ''} 
-                      ${t.projects?.name   ? '📁 ' + t.projects.name  : ''}
+                      ${TasksPage.membersById[task.assigned_user]?.full_name ? 'Assigned: ' + escapeHtml(TasksPage.membersById[task.assigned_user].full_name) : 'Unassigned'}
+                      ${TasksPage.projectsById[task.project_id]?.name ? ` · Project: ${escapeHtml(TasksPage.projectsById[task.project_id].name)}` : ''}
                     </div>
-                    ${t.deadline ? `
+                    ${task.description ? `<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">${escapeHtml(task.description)}</div>` : ''}
+                    ${task.deadline ? `
                       <div style="font-size:11px;${isOverdue ? 'color:var(--danger);font-weight:600;' : 'color:var(--text3);'}">
-                        ${isOverdue ? '⚠ Overdue: ' : 'Due: '}${fmtDate(t.deadline)}
+                        ${isOverdue ? 'Overdue: ' : 'Due: '}${fmtDate(task.deadline)}
                       </div>` : ''}
-                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-                      ${col.key !== 'in_progress' && col.key !== 'completed' ? `
-                        <button class="btn btn-sm" onclick="updateTaskStatus('${t.id}','in_progress')">Start</button>` : ''}
-                      ${col.key !== 'completed' ? `
-                        <button class="btn btn-sm" style="background:var(--success-bg);color:var(--success);" onclick="updateTaskStatus('${t.id}','completed')">✓ Done</button>` : ''}
+                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+                      ${statusBadge(task.status)}
+                      ${canUpdateTask(task) && col.key !== 'in_progress' && col.key !== 'completed' ? `
+                        <button class="btn btn-sm" onclick="updateTaskStatus('${task.id}','in_progress')">Start</button>` : ''}
+                      ${canUpdateTask(task) && col.key !== 'completed' ? `
+                        <button class="btn btn-sm" style="background:var(--success-bg);color:var(--success);" onclick="updateTaskStatus('${task.id}','completed')">✓ Done</button>` : ''}
                     </div>
                   </div>`;
               }).join('')}
@@ -78,16 +110,27 @@ async function renderTasks() {
 }
 
 async function updateTaskStatus(taskId, status) {
-  await DB.client.from('tasks').update({ status, updated_at: new Date().toISOString() }).eq('id', taskId);
+  const payload = {
+    status,
+    completed_at: status === 'completed' ? new Date().toISOString() : null,
+  };
+  await DB.client.from('tasks').update(payload).eq('id', taskId);
   renderPage('tasks');
 }
 
 async function openAddTask() {
+  if (!canCreateTasks()) return;
+
   const sb = DB.client;
-  const [{ data: members }, { data: projects }] = await Promise.all([
+  const [{ data: members, error: membersError }, { data: projects, error: projectsError }] = await Promise.all([
     sb.from('users').select('id,full_name').eq('family_id', State.fid),
     sb.from('projects').select('id,name').eq('family_id', State.fid).eq('status', 'active'),
   ]);
+
+  if (membersError || projectsError) {
+    console.error('[Tasks] Failed to load task form options:', membersError || projectsError);
+    return;
+  }
 
   Modal.open('Add Task', `
     <div class="form-group"><label class="form-label">Task Title</label>
@@ -98,12 +141,12 @@ async function openAddTask() {
       <div class="form-group"><label class="form-label">Assign To</label>
         <select id="t-user" class="form-select">
           <option value="">— Unassigned —</option>
-          ${(members || []).map(m => `<option value="${m.id}">${m.full_name}</option>`).join('')}
+          ${(members || []).map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
         </select></div>
       <div class="form-group"><label class="form-label">Project</label>
         <select id="t-proj" class="form-select">
           <option value="">— None —</option>
-          ${(projects || []).map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+          ${(projects || []).map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('')}
         </select></div>
     </div>
     <div class="form-row">
@@ -116,20 +159,32 @@ async function openAddTask() {
           <option value="low">Low</option>
         </select></div>
     </div>
+    <p id="task-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Create', cls: 'btn-primary', fn: async () => {
-    const title = document.getElementById('t-title').value.trim();
-    if (!title) return;
-    await DB.client.from('tasks').insert({
-      family_id:   State.fid,
+    hideErr('task-err');
+    const title = document.getElementById('t-title')?.value.trim() || '';
+    if (!title) {
+      showErr('task-err', 'Task title is required.');
+      return;
+    }
+
+    const { error } = await DB.client.from('tasks').insert({
+      family_id: State.fid,
       title,
-      description: document.getElementById('t-desc').value,
-      assigned_to: document.getElementById('t-user').value || null,
-      project_id:  document.getElementById('t-proj').value || null,
-      deadline:    document.getElementById('t-dead').value || null,
-      priority:    document.getElementById('t-prio').value,
-      status:      'pending',
-      created_by:  State.uid,
+      description: document.getElementById('t-desc')?.value.trim() || null,
+      assigned_user: document.getElementById('t-user')?.value || null,
+      project_id: document.getElementById('t-proj')?.value || null,
+      deadline: document.getElementById('t-dead')?.value || null,
+      priority: document.getElementById('t-prio')?.value || 'medium',
+      status: 'pending',
+      created_by: State.uid,
     });
+
+    if (error) {
+      showErr('task-err', error.message);
+      return;
+    }
+
     Modal.close();
     renderPage('tasks');
   }}]);

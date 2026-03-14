@@ -1,42 +1,139 @@
 /**
  * js/pages/farming.js
- * ─────────────────────────────────────────────────────
  * Farm Manager: crops, activities, inputs, livestock.
  * Filters to farming-type projects only.
  */
 
-async function renderFarming() {
-  setTopbar('Farm Manager', `
-    <button class="btn btn-sm" onclick="openAddCrop()">+ Crop</button>
-    <button class="btn btn-sm" onclick="openAddLivestock()">+ Livestock</button>
-    <button class="btn btn-primary btn-sm" onclick="openAddActivity()">+ Activity</button>
-  `);
-  const sb = DB.client;
+const FarmingPage = {
+  projects: [],
+  projectsById: {},
+  membersById: {},
+};
 
-  const [{ data: projects }, { data: crops }, { data: activities }, { data: inputs }, { data: livestock }] = await Promise.all([
-    sb.from('projects').select('*').eq('family_id', State.fid).eq('project_type', 'farming'),
-    sb.from('farm_crops').select('*,projects(name)').eq('family_id', State.fid),
-    sb.from('project_activities').select('*,projects(name),users(full_name)').eq('family_id', State.fid).order('activity_date', { ascending: false }).limit(20),
-    sb.from('farm_inputs').select('*,projects(name)').eq('family_id', State.fid).order('purchased_date', { ascending: false }).limit(20),
-    sb.from('livestock').select('*,projects(name)').eq('family_id', State.fid),
+function canManageFarmingRecords() {
+  return ['admin', 'project_manager'].includes(State.currentProfile?.role);
+}
+
+function canLogFarmingActivity() {
+  return Boolean(State.currentProfile?.family_id || State.fid);
+}
+
+function farmingProjectName(projectId) {
+  return FarmingPage.projectsById[projectId]?.name || '-';
+}
+
+async function getFarmingProjects() {
+  const { data, error } = await DB.client
+    .from('projects')
+    .select('id,name')
+    .eq('family_id', State.fid)
+    .eq('project_type', 'farming')
+    .order('name');
+
+  if (error) {
+    console.error('[Farming] Failed to load farming projects:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+async function ensureFarmingProjects() {
+  const projects = await getFarmingProjects();
+  if (projects.length) return projects;
+
+  Modal.open('Farming Project Required', `
+    <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+      Create a farming project from the Projects page before adding crops, livestock, inputs, or activities.
+    </div>
+  `);
+  return null;
+}
+
+async function renderFarming() {
+  const actions = [];
+  if (canManageFarmingRecords()) {
+    actions.push(`<button class="btn btn-sm" onclick="openAddCrop()">+ Crop</button>`);
+    actions.push(`<button class="btn btn-sm" onclick="openAddLivestock()">+ Livestock</button>`);
+  }
+  if (canLogFarmingActivity()) {
+    actions.push(`<button class="btn btn-primary btn-sm" onclick="openAddActivity()">+ Activity</button>`);
+  }
+  setTopbar('Farm Manager', actions.join(' '));
+
+  const sb = DB.client;
+  const [{ data: projects, error: projectError }, { data: members, error: memberError }] = await Promise.all([
+    sb.from('projects').select('id,name,status').eq('family_id', State.fid).eq('project_type', 'farming').order('created_at', { ascending: false }),
+    sb.from('users').select('id,full_name').eq('family_id', State.fid),
   ]);
+
+  if (projectError || memberError) {
+    console.error('[Farming] Failed to load:', projectError || memberError);
+    document.getElementById('page-content').innerHTML = `
+      <div class="content">
+        <div class="card">${empty('Unable to load farm records right now')}</div>
+      </div>`;
+    return;
+  }
+
+  FarmingPage.projects = projects || [];
+  FarmingPage.projectsById = Object.fromEntries(FarmingPage.projects.map((project) => [project.id, project]));
+  FarmingPage.membersById = Object.fromEntries((members || []).map((member) => [member.id, member]));
+
+  const projectIds = FarmingPage.projects.map((project) => project.id);
+  const cropQuery = projectIds.length
+    ? sb.from('farm_crops').select('*').in('project_id', projectIds).order('planting_date', { ascending: false })
+    : Promise.resolve({ data: [], error: null });
+  const activityQuery = projectIds.length
+    ? sb.from('project_activities').select('*').in('project_id', projectIds).order('activity_date', { ascending: false }).limit(20)
+    : Promise.resolve({ data: [], error: null });
+  const inputQuery = projectIds.length
+    ? sb.from('farm_inputs').select('*').in('project_id', projectIds).order('created_at', { ascending: false }).limit(20)
+    : Promise.resolve({ data: [], error: null });
+  const livestockQuery = projectIds.length
+    ? sb.from('livestock').select('*').in('project_id', projectIds).order('created_at', { ascending: false })
+    : Promise.resolve({ data: [], error: null });
+
+  const [
+    { data: crops, error: cropError },
+    { data: activities, error: activityError },
+    { data: inputs, error: inputError },
+    { data: livestock, error: livestockError },
+  ] = await Promise.all([cropQuery, activityQuery, inputQuery, livestockQuery]);
+
+  if (cropError || activityError || inputError || livestockError) {
+    console.error('[Farming] Failed to load farm data:', cropError || activityError || inputError || livestockError);
+    document.getElementById('page-content').innerHTML = `
+      <div class="content">
+        <div class="card">${empty('Unable to load farm records right now')}</div>
+      </div>`;
+    return;
+  }
+
+  const farmProjects = FarmingPage.projects;
+  const farmCrops = crops || [];
+  const farmActivities = activities || [];
+  const farmInputs = inputs || [];
+  const farmLivestock = livestock || [];
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
-
-      <!-- Metrics -->
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Farm Projects</div>
-          <div class="metric-value">${(projects || []).length}</div></div>
+          <div class="metric-value">${farmProjects.length}</div></div>
         <div class="metric-card"><div class="metric-label">Crops Tracked</div>
-          <div class="metric-value" style="color:var(--success);">${(crops || []).length}</div></div>
+          <div class="metric-value" style="color:var(--success);">${farmCrops.length}</div></div>
         <div class="metric-card"><div class="metric-label">Livestock</div>
-          <div class="metric-value" style="color:var(--warning);">${(livestock || []).reduce((a, b) => a + Number(b.quantity || 0), 0)}</div></div>
+          <div class="metric-value" style="color:var(--warning);">${farmLivestock.reduce((sum, item) => sum + Number(item.count || 0), 0)}</div></div>
         <div class="metric-card"><div class="metric-label">Activities</div>
-          <div class="metric-value">${(activities || []).length}</div></div>
+          <div class="metric-value">${farmActivities.length}</div></div>
       </div>
 
-      <!-- Crops + Livestock -->
+      ${!farmProjects.length ? `
+        <div class="card mb16">
+          ${empty('No farming projects yet - create one from Projects to start tracking operations')}
+        </div>` : ''}
+
       <div class="g2 mb16">
         <div class="card">
           <div class="card-title">Crops</div>
@@ -44,19 +141,19 @@ async function renderFarming() {
             <table>
               <thead><tr><th>Crop</th><th>Farm</th><th>Area</th><th>Stage</th><th>Expected Harvest</th></tr></thead>
               <tbody>
-                ${(crops || []).map(c => `
+                ${farmCrops.map((crop) => `
                   <tr>
-                    <td style="font-weight:600;">${c.crop_name}</td>
-                    <td style="font-size:12px;">${c.projects?.name || '—'}</td>
-                    <td style="font-size:12px;">${c.area_acres ? c.area_acres + ' ac' : '—'}</td>
-                    <td>${statusBadge(c.growth_stage || 'planning')}</td>
-                    <td style="font-size:12px;color:var(--text3);">${fmtDate(c.expected_harvest_date)}</td>
+                    <td style="font-weight:600;">${escapeHtml(crop.crop_name || '-')}</td>
+                    <td style="font-size:12px;">${escapeHtml(farmingProjectName(crop.project_id))}</td>
+                    <td style="font-size:12px;">${crop.acreage ? `${fmt(crop.acreage)} ac` : '-'}</td>
+                    <td>${statusBadge(crop.status || 'planning')}</td>
+                    <td style="font-size:12px;color:var(--text3);">${crop.expected_harvest_date ? fmtDate(crop.expected_harvest_date) : '-'}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
           </div>
-          ${!(crops || []).length ? empty('No crops recorded') : ''}
-          <button class="btn btn-sm" style="margin-top:10px;" onclick="openAddCrop()">+ Add Crop</button>
+          ${!farmCrops.length ? empty('No crops recorded') : ''}
+          ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddCrop()">+ Add Crop</button>` : ''}
         </div>
 
         <div class="card">
@@ -65,22 +162,21 @@ async function renderFarming() {
             <table>
               <thead><tr><th>Type</th><th>Breed</th><th>Qty</th><th>Farm</th></tr></thead>
               <tbody>
-                ${(livestock || []).map(l => `
+                ${farmLivestock.map((item) => `
                   <tr>
-                    <td style="font-weight:600;">${l.livestock_type}</td>
-                    <td style="font-size:12px;">${l.breed || '—'}</td>
-                    <td style="font-weight:600;">${l.quantity}</td>
-                    <td style="font-size:12px;">${l.projects?.name || '—'}</td>
+                    <td style="font-weight:600;">${escapeHtml(item.animal_type || '-')}</td>
+                    <td style="font-size:12px;">${escapeHtml(item.breed || '-')}</td>
+                    <td style="font-weight:600;">${fmt(item.count || 0)}</td>
+                    <td style="font-size:12px;">${escapeHtml(farmingProjectName(item.project_id))}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
           </div>
-          ${!(livestock || []).length ? empty('No livestock recorded') : ''}
-          <button class="btn btn-sm" style="margin-top:10px;" onclick="openAddLivestock()">+ Add Livestock</button>
+          ${!farmLivestock.length ? empty('No livestock recorded') : ''}
+          ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddLivestock()">+ Add Livestock</button>` : ''}
         </div>
       </div>
 
-      <!-- Activities + Inputs -->
       <div class="g2">
         <div class="card">
           <div class="card-title">Recent Activities</div>
@@ -88,75 +184,78 @@ async function renderFarming() {
             <table>
               <thead><tr><th>Activity</th><th>Farm</th><th>By</th><th>Date</th><th>Cost</th></tr></thead>
               <tbody>
-                ${(activities || []).map(a => `
+                ${farmActivities.map((activity) => `
                   <tr>
-                    <td>${a.activity_type}</td>
-                    <td style="font-size:12px;">${a.projects?.name || '—'}</td>
-                    <td style="font-size:12px;">${a.users?.full_name || '—'}</td>
-                    <td style="font-size:12px;color:var(--text3);">${fmtDate(a.activity_date)}</td>
-                    <td style="font-size:12px;">${a.cost ? 'KES ' + fmt(a.cost) : '—'}</td>
+                    <td>
+                      ${escapeHtml(activity.activity_type || '-')}
+                      ${activity.description ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(activity.description)}</div>` : ''}
+                    </td>
+                    <td style="font-size:12px;">${escapeHtml(farmingProjectName(activity.project_id))}</td>
+                    <td style="font-size:12px;">${escapeHtml(FarmingPage.membersById[activity.created_by]?.full_name || '-')}</td>
+                    <td style="font-size:12px;color:var(--text3);">${activity.activity_date ? fmtDate(activity.activity_date) : '-'}</td>
+                    <td style="font-size:12px;">${activity.cost ? `KES ${fmt(activity.cost)}` : '-'}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
           </div>
-          ${!(activities || []).length ? empty('No activities recorded') : ''}
-          <button class="btn btn-sm" style="margin-top:10px;" onclick="openAddActivity()">+ Add Activity</button>
+          ${!farmActivities.length ? empty('No activities recorded') : ''}
+          ${canLogFarmingActivity() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddActivity()">+ Add Activity</button>` : ''}
         </div>
 
         <div class="card">
           <div class="card-title">Farm Inputs</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Input</th><th>Qty</th><th>Supplier</th><th>Cost</th><th>Date</th></tr></thead>
+              <thead><tr><th>Input</th><th>Qty</th><th>Farm</th><th>Cost</th><th>Date</th></tr></thead>
               <tbody>
-                ${(inputs || []).map(i => `
+                ${farmInputs.map((input) => `
                   <tr>
-                    <td>${i.input_name}</td>
-                    <td style="font-size:12px;">${i.quantity} ${i.unit || ''}</td>
-                    <td style="font-size:12px;color:var(--text2);">${i.supplier || '—'}</td>
-                    <td>KES ${fmt(i.total_cost)}</td>
-                    <td style="font-size:12px;color:var(--text3);">${fmtDate(i.purchased_date)}</td>
+                    <td>
+                      ${escapeHtml(input.name || '-')}
+                      ${input.notes ? `<div style="font-size:11px;color:var(--text3);">${escapeHtml(input.notes)}</div>` : ''}
+                    </td>
+                    <td style="font-size:12px;">${fmt(input.quantity || 0)} ${escapeHtml(input.unit || '')}</td>
+                    <td style="font-size:12px;color:var(--text2);">${escapeHtml(farmingProjectName(input.project_id))}</td>
+                    <td>KES ${fmt(Number(input.quantity || 0) * Number(input.cost_per_unit || 0))}</td>
+                    <td style="font-size:12px;color:var(--text3);">${fmtDate(input.updated_at || input.created_at)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>
           </div>
-          ${!(inputs || []).length ? empty('No inputs recorded') : ''}
-          <button class="btn btn-sm" style="margin-top:10px;" onclick="openAddInput()">+ Add Input</button>
+          ${!farmInputs.length ? empty('No inputs recorded') : ''}
+          ${canManageFarmingRecords() ? `<button class="btn btn-sm" style="margin-top:10px;" onclick="openAddInput()">+ Add Input</button>` : ''}
         </div>
       </div>
-
     </div>`;
 }
 
-// ── Modals ─────────────────────────────────────────
-
-async function _farmProjectOptions() {
-  const { data } = await DB.client.from('projects').select('id,name').eq('family_id', State.fid).eq('project_type', 'farming');
-  return (data || []).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-}
-
 async function openAddCrop() {
-  const opts = await _farmProjectOptions();
+  if (!canManageFarmingRecords()) return;
+
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+
   Modal.open('Add Crop', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Crop Name</label>
         <input id="cr-name" class="form-input" placeholder="Maize"/></div>
-      <div class="form-group"><label class="form-label">Variety</label>
-        <input id="cr-var"  class="form-input" placeholder="DH04"/></div>
+      <div class="form-group"><label class="form-label">Farm Project</label>
+        <select id="cr-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="cr-proj" class="form-select"><option value="">— None —</option>${opts}</select></div>
       <div class="form-group"><label class="form-label">Area (acres)</label>
         <input id="cr-area" class="form-input" type="number" placeholder="2"/></div>
+      <div class="form-group"><label class="form-label">Expected Yield</label>
+        <input id="cr-yield" class="form-input" type="number" placeholder="1200"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Planting Date</label>
         <input id="cr-plant" class="form-input" type="date"/></div>
       <div class="form-group"><label class="form-label">Expected Harvest</label>
-        <input id="cr-harv"  class="form-input" type="date"/></div>
+        <input id="cr-harv" class="form-input" type="date"/></div>
     </div>
-    <div class="form-group"><label class="form-label">Growth Stage</label>
+    <div class="form-group"><label class="form-label">Status</label>
       <select id="cr-stage" class="form-select">
         <option value="planning">Planning</option>
         <option value="planted">Planted</option>
@@ -164,135 +263,215 @@ async function openAddCrop() {
         <option value="harvesting">Harvesting</option>
         <option value="completed">Completed</option>
       </select></div>
+    <div class="form-group"><label class="form-label">Notes</label>
+      <textarea id="cr-notes" class="form-textarea" placeholder="Optional notes"></textarea></div>
+    <p id="crop-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    await DB.client.from('farm_crops').insert({
-      family_id:             State.fid,
-      project_id:            document.getElementById('cr-proj').value  || null,
-      crop_name:             document.getElementById('cr-name').value,
-      variety:               document.getElementById('cr-var').value,
-      area_acres:            parseFloat(document.getElementById('cr-area').value)  || null,
-      planting_date:         document.getElementById('cr-plant').value || null,
-      expected_harvest_date: document.getElementById('cr-harv').value  || null,
-      growth_stage:          document.getElementById('cr-stage').value,
+    hideErr('crop-err');
+    const cropName = document.getElementById('cr-name')?.value.trim() || '';
+    const projectId = document.getElementById('cr-proj')?.value || '';
+
+    if (!cropName) {
+      showErr('crop-err', 'Crop name is required.');
+      return;
+    }
+    if (!projectId) {
+      showErr('crop-err', 'Select a farming project.');
+      return;
+    }
+
+    const { error } = await DB.client.from('farm_crops').insert({
+      project_id: projectId,
+      crop_name: cropName,
+      acreage: parseFloat(document.getElementById('cr-area')?.value || '') || null,
+      expected_yield: parseFloat(document.getElementById('cr-yield')?.value || '') || null,
+      planting_date: document.getElementById('cr-plant')?.value || null,
+      expected_harvest_date: document.getElementById('cr-harv')?.value || null,
+      status: document.getElementById('cr-stage')?.value || 'planning',
+      notes: document.getElementById('cr-notes')?.value.trim() || null,
     });
-    Modal.close(); renderPage('farming');
+
+    if (error) {
+      showErr('crop-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('farming');
   }}]);
 }
 
 async function openAddActivity() {
-  const opts = await _farmProjectOptions();
-  const { data: members } = await DB.client.from('users').select('id,full_name').eq('family_id', State.fid);
+  if (!canLogFarmingActivity()) return;
+
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+
   Modal.open('Log Farm Activity', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Activity Type</label>
         <select id="act-type" class="form-select">
-          <option>Planting</option><option>Weeding</option><option>Fertilizing</option>
-          <option>Spraying</option><option>Harvesting</option><option>Irrigation</option><option>Other</option>
+          <option value="Planting">Planting</option>
+          <option value="Weeding">Weeding</option>
+          <option value="Fertilizing">Fertilizing</option>
+          <option value="Spraying">Spraying</option>
+          <option value="Harvesting">Harvesting</option>
+          <option value="Irrigation">Irrigation</option>
+          <option value="Other">Other</option>
         </select></div>
       <div class="form-group"><label class="form-label">Date</label>
         <input id="act-date" class="form-input" type="date"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="act-proj" class="form-select"><option value="">— None —</option>${opts}</select></div>
-      <div class="form-group"><label class="form-label">Performed By</label>
-        <select id="act-user" class="form-select">
-          ${(members || []).map(m => `<option value="${m.id}">${m.full_name}</option>`).join('')}
-        </select></div>
-    </div>
-    <div class="form-row">
+        <select id="act-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
       <div class="form-group"><label class="form-label">Cost (KES)</label>
         <input id="act-cost" class="form-input" type="number" placeholder="0"/></div>
-      <div class="form-group"><label class="form-label">Notes</label>
-        <input id="act-notes" class="form-input" placeholder="Optional notes"/></div>
     </div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="act-desc" class="form-textarea" placeholder="What happened during this activity?"></textarea></div>
+    <p id="activity-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Log', cls: 'btn-primary', fn: async () => {
-    await DB.client.from('project_activities').insert({
-      family_id:     State.fid,
-      project_id:    document.getElementById('act-proj').value || null,
-      activity_type: document.getElementById('act-type').value,
-      activity_date: document.getElementById('act-date').value || null,
-      performed_by:  document.getElementById('act-user').value || null,
-      cost:          parseFloat(document.getElementById('act-cost').value) || 0,
-      notes:         document.getElementById('act-notes').value,
+    hideErr('activity-err');
+    const projectId = document.getElementById('act-proj')?.value || '';
+
+    if (!projectId) {
+      showErr('activity-err', 'Select a farming project.');
+      return;
+    }
+
+    const { error } = await DB.client.from('project_activities').insert({
+      project_id: projectId,
+      activity_type: document.getElementById('act-type')?.value || 'Other',
+      activity_date: document.getElementById('act-date')?.value || null,
+      description: document.getElementById('act-desc')?.value.trim() || null,
+      cost: parseFloat(document.getElementById('act-cost')?.value || '') || 0,
+      created_by: State.uid,
     });
-    Modal.close(); renderPage('farming');
+
+    if (error) {
+      showErr('activity-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('farming');
   }}]);
 }
 
 async function openAddInput() {
-  const opts = await _farmProjectOptions();
+  if (!canManageFarmingRecords()) return;
+
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+
   Modal.open('Record Farm Input', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Input Name</label>
         <input id="in-name" class="form-input" placeholder="DAP Fertilizer"/></div>
-      <div class="form-group"><label class="form-label">Type</label>
-        <select id="in-type" class="form-select">
-          <option>Fertilizer</option><option>Pesticide</option><option>Herbicide</option>
-          <option>Seeds</option><option>Equipment</option><option>Other</option>
-        </select></div>
+      <div class="form-group"><label class="form-label">Farm Project</label>
+        <select id="in-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Quantity</label>
-        <input id="in-qty"  class="form-input" type="number" placeholder="50"/></div>
+        <input id="in-qty" class="form-input" type="number" placeholder="50"/></div>
       <div class="form-group"><label class="form-label">Unit</label>
         <input id="in-unit" class="form-input" placeholder="kg"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Total Cost (KES)</label>
-        <input id="in-cost"    class="form-input" type="number" placeholder="4500"/></div>
-      <div class="form-group"><label class="form-label">Supplier</label>
-        <input id="in-supplier" class="form-input" placeholder="Farmer's Choice"/></div>
+      <div class="form-group"><label class="form-label">Cost Per Unit (KES)</label>
+        <input id="in-cost" class="form-input" type="number" placeholder="4500"/></div>
+      <div class="form-group"><label class="form-label">Notes</label>
+        <input id="in-notes" class="form-input" placeholder="Optional notes"/></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="in-proj" class="form-select"><option value="">— None —</option>${opts}</select></div>
-      <div class="form-group"><label class="form-label">Purchase Date</label>
-        <input id="in-date" class="form-input" type="date"/></div>
-    </div>
+    <p id="input-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    await DB.client.from('farm_inputs').insert({
-      family_id:      State.fid,
-      project_id:     document.getElementById('in-proj').value || null,
-      input_name:     document.getElementById('in-name').value,
-      input_type:     document.getElementById('in-type').value,
-      quantity:       parseFloat(document.getElementById('in-qty').value)  || 0,
-      unit:           document.getElementById('in-unit').value,
-      total_cost:     parseFloat(document.getElementById('in-cost').value) || 0,
-      supplier:       document.getElementById('in-supplier').value,
-      purchased_date: document.getElementById('in-date').value || null,
+    hideErr('input-err');
+    const name = document.getElementById('in-name')?.value.trim() || '';
+    const projectId = document.getElementById('in-proj')?.value || '';
+
+    if (!name) {
+      showErr('input-err', 'Input name is required.');
+      return;
+    }
+    if (!projectId) {
+      showErr('input-err', 'Select a farming project.');
+      return;
+    }
+
+    const { error } = await DB.client.from('farm_inputs').insert({
+      project_id: projectId,
+      name,
+      quantity: parseFloat(document.getElementById('in-qty')?.value || '') || 0,
+      unit: document.getElementById('in-unit')?.value.trim() || null,
+      cost_per_unit: parseFloat(document.getElementById('in-cost')?.value || '') || 0,
+      notes: document.getElementById('in-notes')?.value.trim() || null,
     });
-    Modal.close(); renderPage('farming');
+
+    if (error) {
+      showErr('input-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('farming');
   }}]);
 }
 
 async function openAddLivestock() {
-  const opts = await _farmProjectOptions();
+  if (!canManageFarmingRecords()) return;
+
+  const projects = await ensureFarmingProjects();
+  if (!projects) return;
+  const opts = projects.map((project) => `<option value="${project.id}">${escapeHtml(project.name)}</option>`).join('');
+
   Modal.open('Add Livestock', `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Type</label>
-        <input id="ls-type"  class="form-input" placeholder="Cattle, Goat, Chicken…"/></div>
+        <input id="ls-type" class="form-input" placeholder="Cattle, Goat, Chicken"/></div>
       <div class="form-group"><label class="form-label">Breed</label>
         <input id="ls-breed" class="form-input" placeholder="Friesian"/></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Quantity</label>
-        <input id="ls-qty"   class="form-input" type="number" placeholder="10"/></div>
+        <input id="ls-qty" class="form-input" type="number" placeholder="10"/></div>
       <div class="form-group"><label class="form-label">Farm Project</label>
-        <select id="ls-proj" class="form-select"><option value="">— None —</option>${opts}</select></div>
+        <select id="ls-proj" class="form-select"><option value="">- Select -</option>${opts}</select></div>
     </div>
     <div class="form-group"><label class="form-label">Notes</label>
-      <textarea id="ls-notes" class="form-textarea" placeholder="Health status, ear tags, etc."></textarea></div>
+      <textarea id="ls-notes" class="form-textarea" placeholder="Health status, ear tags, or feed notes"></textarea></div>
+    <p id="livestock-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    await DB.client.from('livestock').insert({
-      family_id:      State.fid,
-      project_id:     document.getElementById('ls-proj').value || null,
-      livestock_type: document.getElementById('ls-type').value,
-      breed:          document.getElementById('ls-breed').value,
-      quantity:       parseInt(document.getElementById('ls-qty').value) || 0,
-      notes:          document.getElementById('ls-notes').value,
+    hideErr('livestock-err');
+    const animalType = document.getElementById('ls-type')?.value.trim() || '';
+    const projectId = document.getElementById('ls-proj')?.value || '';
+
+    if (!animalType) {
+      showErr('livestock-err', 'Livestock type is required.');
+      return;
+    }
+    if (!projectId) {
+      showErr('livestock-err', 'Select a farming project.');
+      return;
+    }
+
+    const { error } = await DB.client.from('livestock').insert({
+      project_id: projectId,
+      animal_type: animalType,
+      breed: document.getElementById('ls-breed')?.value.trim() || null,
+      count: parseInt(document.getElementById('ls-qty')?.value || '0', 10) || 0,
+      notes: document.getElementById('ls-notes')?.value.trim() || null,
     });
-    Modal.close(); renderPage('farming');
+
+    if (error) {
+      showErr('livestock-err', error.message);
+      return;
+    }
+
+    Modal.close();
+    renderPage('farming');
   }}]);
 }
 
