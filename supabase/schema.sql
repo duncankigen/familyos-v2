@@ -1307,7 +1307,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage payment accounts"
 on payment_accounts for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- STUDENTS: all family members can read
 create policy "family reads students"
@@ -1316,7 +1317,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage students"
 on students for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- SCHOOL FEES: all family members can read
 create policy "family reads school fees"
@@ -1362,7 +1364,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage emergency fund"
 on emergency_fund for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 create policy "family reads disbursements"
 on emergency_disbursements for select
@@ -1370,7 +1373,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage disbursements"
 on emergency_disbursements for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- PROJECTS: all family members can read; pm/admin can write
 create policy "family reads projects"
@@ -1383,7 +1387,8 @@ with check (family_id = get_my_family_id() and get_my_role() in ('admin','projec
 
 create policy "authorized update projects"
 on projects for update
-using (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'));
 
 -- PROJECT MEMBERS
 create policy "family reads project members"
@@ -1393,7 +1398,11 @@ using (project_id in (select id from projects where family_id = get_my_family_id
 create policy "authorized manage project members"
 on project_members for all
 using (project_id in (select id from projects where family_id = get_my_family_id())
-  and get_my_role() in ('admin','project_manager'));
+  and get_my_role() in ('admin','project_manager'))
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+);
 
 -- FARM CROPS
 create policy "family reads crops"
@@ -1403,7 +1412,11 @@ using (project_id in (select id from projects where family_id = get_my_family_id
 create policy "authorized manage crops"
 on farm_crops for all
 using (project_id in (select id from projects where family_id = get_my_family_id())
-  and get_my_role() in ('admin','project_manager'));
+  and get_my_role() in ('admin','project_manager'))
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+);
 
 -- PROJECT ACTIVITIES
 create policy "family reads activities"
@@ -1433,7 +1446,11 @@ using (project_id in (select id from projects where family_id = get_my_family_id
 create policy "authorized manage farm inputs"
 on farm_inputs for all
 using (project_id in (select id from projects where family_id = get_my_family_id())
-  and get_my_role() in ('admin','project_manager'));
+  and get_my_role() in ('admin','project_manager'))
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+);
 
 -- LIVESTOCK
 create policy "family reads livestock"
@@ -1443,7 +1460,11 @@ using (project_id in (select id from projects where family_id = get_my_family_id
 create policy "authorized manage livestock"
 on livestock for all
 using (project_id in (select id from projects where family_id = get_my_family_id())
-  and get_my_role() in ('admin','project_manager'));
+  and get_my_role() in ('admin','project_manager'))
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and get_my_role() in ('admin','project_manager')
+);
 
 create policy "family reads livestock events"
 on livestock_events for select
@@ -1459,7 +1480,15 @@ using (livestock_id in (
   select lv.id from livestock lv
   join projects p on lv.project_id = p.id
   where p.family_id = get_my_family_id()
-) and get_my_role() in ('admin','project_manager'));
+) and get_my_role() in ('admin','project_manager'))
+with check (
+  livestock_id in (
+    select lv.id from livestock lv
+    join projects p on lv.project_id = p.id
+    where p.family_id = get_my_family_id()
+  )
+  and get_my_role() in ('admin','project_manager')
+);
 
 create policy "family reads farm outputs"
 on farm_outputs for select
@@ -1517,7 +1546,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage vendors"
 on vendors for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','project_manager'));
 
 -- ASSETS
 create policy "family reads assets"
@@ -1526,7 +1556,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage assets"
 on assets for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- MEETINGS: all family can read; admin can manage
 create policy "family reads meetings"
@@ -1564,7 +1595,8 @@ using (family_id = get_my_family_id());
 
 create policy "authorized manage goals"
 on family_goals for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- DOCUMENTS: access_level enforcement
 create policy "members read member-level docs"
@@ -1604,7 +1636,8 @@ with check (family_id = get_my_family_id());
 
 create policy "users update own notifications"
 on notifications for update
-using (user_id = auth.uid());
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
 
 -- AI INSIGHTS: all family members can read
 create policy "family reads ai insights"
@@ -1613,7 +1646,8 @@ using (family_id = get_my_family_id());
 
 create policy "system manages ai insights"
 on ai_insights for all
-using (family_id = get_my_family_id() and get_my_role() in ('admin'));
+using (family_id = get_my_family_id() and get_my_role() in ('admin'))
+with check (family_id = get_my_family_id() and get_my_role() in ('admin'));
 
 create policy "users read own platform admin row"
 on platform_admins for select
