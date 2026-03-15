@@ -42,6 +42,19 @@ async function getMyProfile() {
   };
 }
 
+async function handleInactiveAccount() {
+  try {
+    await DB.client.auth.signOut();
+  } catch (error) {
+    console.warn('[App] Failed to fully sign out inactive account:', error);
+  }
+
+  if (window.Router?.clearRememberedPage) Router.clearRememberedPage();
+  if (typeof resetSessionState === 'function') resetSessionState();
+  show('auth-screen');
+  showErr('auth-err', 'Your account has been deactivated. Contact your family admin or platform support.');
+}
+
 function setSidebarIdentity(profile, user) {
   const displayName = (profile?.full_name || user?.email || 'Member').trim();
   const initials = displayName
@@ -1217,6 +1230,11 @@ async function loadUserProfile(user) {
         'We signed you in, but your profile is still unavailable. Re-run supabase/auth_fix.sql, then refresh and try again.'
       );
       show('auth-screen');
+      return null;
+    }
+
+    if (profile.is_active === false) {
+      await handleInactiveAccount();
       return null;
     }
 

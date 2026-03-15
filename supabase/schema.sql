@@ -781,7 +781,10 @@ returns uuid
 language sql stable
 security definer
 as $$
-  select family_id from users where id = auth.uid()
+  select family_id
+  from users
+  where id = auth.uid()
+    and is_active = true
 $$;
 
 create or replace function get_my_role()
@@ -789,7 +792,10 @@ returns text
 language sql stable
 security definer
 as $$
-  select role from users where id = auth.uid()
+  select role
+  from users
+  where id = auth.uid()
+    and is_active = true
 $$;
 
 create or replace function is_platform_admin()
@@ -801,8 +807,10 @@ as $$
   select exists (
     select 1
     from public.platform_admins
-    where user_id = auth.uid()
-      and is_active = true
+    join public.users on public.users.id = public.platform_admins.user_id
+    where public.platform_admins.user_id = auth.uid()
+      and public.platform_admins.is_active = true
+      and public.users.is_active = true
   )
 $$;
 
@@ -892,8 +900,7 @@ begin
   set
     first_name = coalesce(nullif(excluded.first_name, ''), public.users.first_name),
     last_name = coalesce(nullif(excluded.last_name, ''), public.users.last_name),
-    full_name = coalesce(nullif(excluded.full_name, ''), public.users.full_name),
-    is_active = true;
+    full_name = coalesce(nullif(excluded.full_name, ''), public.users.full_name);
 
   return v_auth_user.id;
 end;
@@ -911,6 +918,7 @@ as $$
 declare
   v_family_id uuid;
   v_existing_family_id uuid;
+  v_is_active boolean;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -921,6 +929,15 @@ begin
   end if;
 
   perform ensure_my_profile();
+
+  select is_active
+  into v_is_active
+  from public.users
+  where id = auth.uid();
+
+  if v_is_active is distinct from true then
+    raise exception 'Your account is inactive. Contact your family admin or platform support.';
+  end if;
 
   select family_id
   into v_existing_family_id
@@ -968,6 +985,7 @@ as $$
 declare
   v_family_id uuid;
   v_role text;
+  v_is_active boolean;
   v_invite_id uuid;
   v_code text;
   v_expires_at timestamptz;
@@ -976,10 +994,14 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  select family_id, role
-  into v_family_id, v_role
+  select family_id, role, is_active
+  into v_family_id, v_role, v_is_active
   from public.users
   where id = auth.uid();
+
+  if v_is_active is distinct from true then
+    raise exception 'Your account is inactive. Contact your family admin or platform support.';
+  end if;
 
   if v_family_id is null then
     raise exception 'Create your family workspace first';
@@ -1038,6 +1060,7 @@ declare
   v_invite public.family_invites%rowtype;
   v_user auth.users%rowtype;
   v_existing_family_id uuid;
+  v_is_active boolean;
 begin
   if auth.uid() is null then
     raise exception 'Not authenticated';
@@ -1048,6 +1071,15 @@ begin
   end if;
 
   perform ensure_my_profile();
+
+  select is_active
+  into v_is_active
+  from public.users
+  where id = auth.uid();
+
+  if v_is_active is distinct from true then
+    raise exception 'Your account is inactive. Contact your family admin or platform support.';
+  end if;
 
   select *
   into v_user
@@ -1136,7 +1168,13 @@ using (family_id = get_my_family_id());
 
 create policy "user updates own profile"
 on users for update
-using (id = auth.uid());
+using (id = auth.uid() and is_active = true)
+with check (
+  id = auth.uid()
+  and family_id is not distinct from (select family_id from public.users where id = auth.uid())
+  and role is not distinct from (select role from public.users where id = auth.uid())
+  and is_active is not distinct from (select is_active from public.users where id = auth.uid())
+);
 
 create policy "admins manage members"
 on users for all
