@@ -374,7 +374,7 @@ function profileCenterSection(section) {
 }
 
 function openProfileCenter(section = 'profile') {
-  const normalizedSection = section || 'profile';
+  const normalizedSection = section === 'admin' ? 'profile' : (section || 'profile');
   const profile = State.currentProfile || {};
   const user = State.currentUser || {};
   const displayName = escapeHtml((profile.full_name || user.email || 'Member').trim());
@@ -384,7 +384,7 @@ function openProfileCenter(section = 'profile') {
       ${accountCenterNav(normalizedSection)}
       <div class="account-center-main">
         <div class="account-center-subtitle">
-          Manage your account experience, support resources, policies, and platform-level tools from one place.
+          Manage your account experience, support resources, and FamilyOS guidance from one place.
         </div>
         ${accountCenterSection(normalizedSection)}
       </div>
@@ -410,12 +410,6 @@ function openProfileCenter(section = 'profile') {
   if (normalizedSection === 'contact') {
     hydrateContactSupportPanel().catch((error) => {
       console.warn('[Account Center] Failed to hydrate support panel:', error);
-    });
-  }
-
-  if (normalizedSection === 'admin') {
-    hydrateAdminPanel().catch((error) => {
-      console.warn('[Account Center] Failed to hydrate admin panel:', error);
     });
   }
 }
@@ -762,13 +756,6 @@ function accountCenterNav(activeSection) {
       ],
     },
   ];
-
-  if (isPlatformAdminUser()) {
-    groups.push({
-      title: 'Platform',
-      items: [['admin', 'Admin']],
-    });
-  }
 
   return `
     <div class="account-center-sidebar">
@@ -1185,6 +1172,7 @@ async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
   await loadPlatformAdminStatus();
+  Sidebar.render();
   setSidebarIdentity(profile, user);
   Sidebar.updateSectionIndicator('announcements', 0);
   Sidebar.updateSectionIndicator('tasks', 0);
@@ -1248,6 +1236,7 @@ function resetSessionState() {
   State.currentProfile = null;
   State.currentFamilyId = null;
   State.isPlatformAdmin = false;
+  State.adminSnapshot = { tickets: [], families: [], users: [] };
   State.unreadAnnouncements = 0;
   State.unreadNotifications = 0;
   State.sectionIndicators = {};

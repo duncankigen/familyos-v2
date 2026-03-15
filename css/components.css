@@ -535,6 +535,131 @@ tbody tr:hover td        { background: var(--bg3); }
   }
 }
 
+/* ── Admin workspace ───────────────────────────── */
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.admin-hero-card {
+  padding: 0;
+  overflow: hidden;
+}
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.admin-sections {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+}
+.admin-list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.admin-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.admin-section-sub {
+  font-size: 12px;
+  color: var(--text3);
+  line-height: 1.5;
+  margin-top: -6px;
+}
+.admin-row-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.admin-row-meta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 3px;
+}
+.admin-row-copy {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.55;
+  margin-top: 6px;
+}
+.admin-actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+.admin-empty {
+  font-size: 12px;
+  color: var(--text3);
+  padding: 10px 0 2px;
+}
+.admin-menu {
+  position: relative;
+  display: inline-block;
+}
+.admin-menu[open] .admin-menu-toggle {
+  background: var(--bg3);
+  color: var(--accent);
+}
+.admin-menu-toggle {
+  list-style: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.admin-menu-toggle::-webkit-details-marker { display: none; }
+.admin-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 190px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+  padding: 6px;
+  z-index: 40;
+}
+.admin-menu-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.admin-menu-item:hover { background: var(--bg3); }
+.admin-menu-item-danger { color: var(--danger); }
+.admin-modal-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (max-width: 960px) {
+  .admin-sections {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Notifications / task comments ───────────── */
 .notif-list { display: flex; flex-direction: column; gap: 10px; }
 .notif-item {

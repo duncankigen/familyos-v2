@@ -16,6 +16,11 @@ const State = {
   unreadNotifications: 0,
   sectionIndicators: {},
   isPlatformAdmin: false,
+  adminSnapshot: {
+    tickets: [],
+    families: [],
+    users: [],
+  },
   isDark:          localStorage.getItem('fos_theme') === 'dark',
 
   /** Convenience getter so pages don't repeat this pattern. */

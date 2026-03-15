@@ -10,7 +10,7 @@
  *   3. Add a <script> tag in index.html.
  */
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { section: 'Main' },
   { page: 'dashboard',     label: 'Dashboard',     icon: '<rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/>' },
   { page: 'members',       label: 'Members',        icon: '<circle cx="6" cy="5" r="3"/><path d="M0 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="13" cy="4" r="2"/><path d="M11 11c.3-.8 1.1-1.4 2-1.4s1.7.6 2 1.4"/>' },
@@ -38,6 +38,21 @@ const NAV_ITEMS = [
   { page: 'ai',            label: 'AI Advisor',     icon: '<circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2" stroke="currentColor" stroke-width="1.5" fill="none"/>' },
 ];
 
+function sidebarNavItems() {
+  const items = [...BASE_NAV_ITEMS];
+  if (State.isPlatformAdmin) {
+    items.push(
+      { section: 'Platform' },
+      {
+        page: 'admin',
+        label: 'Admin',
+        icon: '<rect x="2" y="2" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 6h6M5 10h6M5 13h3" stroke="currentColor" stroke-width="1.5" fill="none"/>',
+      },
+    );
+  }
+  return items;
+}
+
 const SECTION_INDICATORS = {
   announcements: { kind: 'count', tone: 'b-red' },
   tasks: { kind: 'count', tone: 'b-red' },
@@ -57,7 +72,7 @@ const SECTION_SEEN_FIELDS = {
 const Sidebar = {
   /** Inject the full sidebar HTML into <aside id="sidebar">. */
   render() {
-    const items = NAV_ITEMS.map(item => {
+    const items = sidebarNavItems().map(item => {
       if (item.section) {
         return `<div class="sb-section">${item.section}</div>`;
       }
