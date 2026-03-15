@@ -156,7 +156,7 @@ async function renderDashboard() {
           ${(tasks || []).slice(0, 5).map((task) => `
             <div class="flex-between mb8">
               <div>
-                <div style="font-size:13px;">${task.title}</div>
+                <div style="font-size:13px;">${escapeHtml(task.title || '')}</div>
                 <div style="font-size:11px;color:var(--text3);">Due: ${fmtDate(task.deadline)}</div>
               </div>
               ${statusBadge(task.status)}
@@ -175,7 +175,7 @@ async function renderDashboard() {
             return `
               <div class="mb12">
                 <div class="flex-between mb8">
-                  <span style="font-size:13px;">${goal.title}</span>
+                  <span style="font-size:13px;">${escapeHtml(goal.title || '')}</span>
                   <span style="font-size:11px;color:var(--text3);">${pct}%</span>
                 </div>
                 <div class="progress">
@@ -196,14 +196,14 @@ async function renderDashboard() {
           ${announcementFeed.map((announcement) => `
             <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:8px;">
               <div style="font-size:11px;font-weight:600;color:var(--accent);">
-                ${announcement.author?.full_name || 'Admin'} · ${ago(announcement.created_at)}
+                ${escapeHtml(announcement.author?.full_name || 'Admin')} · ${ago(announcement.created_at)}
               </div>
               <div style="font-size:13px;font-weight:600;margin-top:2px;">
-                ${announcement.title}
+                ${escapeHtml(announcement.title || '')}
                 ${announcement.is_pinned ? '<span class="badge b-amber" style="margin-left:4px;">Pinned</span>' : ''}
               </div>
               <div style="font-size:12px;color:var(--text2);margin-top:3px;">
-                ${announcement.message.substring(0, 100)}${announcement.message.length > 100 ? '...' : ''}
+                ${escapeHtml((announcement.message || '').substring(0, 100))}${(announcement.message || '').length > 100 ? '...' : ''}
               </div>
             </div>`).join('')}
           ${!(announcements || []).length ? empty('No announcements') : ''}
@@ -218,9 +218,9 @@ async function renderDashboard() {
           ${activeInsights.map((insight) => `
             <div class="ai-card ai-${insight.severity === 'warning' ? 'amber' : insight.severity === 'alert' ? 'red' : insight.severity === 'success' ? 'green' : 'blue'}">
               <div class="ai-tag" style="color:var(--${insight.severity === 'warning' ? 'warning' : insight.severity === 'alert' ? 'danger' : insight.severity === 'success' ? 'success' : 'accent'});">
-                ${insight.title}
+                ${escapeHtml(insight.title || '')}
               </div>
-              <div class="ai-msg">${insight.message}</div>
+              <div class="ai-msg">${escapeHtml(insight.message || '')}</div>
             </div>`).join('')}
           ${!activeInsights.length
             ? `<div class="ai-card ai-blue">

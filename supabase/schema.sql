@@ -1416,7 +1416,14 @@ with check (project_id in (select id from projects where family_id = get_my_fami
 
 create policy "authorized manage activities"
 on project_activities for update
-using (created_by = auth.uid() or get_my_role() in ('admin','project_manager'));
+using (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and (created_by = auth.uid() or get_my_role() in ('admin','project_manager'))
+)
+with check (
+  project_id in (select id from projects where family_id = get_my_family_id())
+  and (created_by = auth.uid() or get_my_role() in ('admin','project_manager'))
+);
 
 -- FARM INPUTS
 create policy "family reads farm inputs"
@@ -1480,7 +1487,14 @@ with check (family_id = get_my_family_id() and get_my_role() in ('admin','projec
 
 create policy "assigned user updates task status"
 on tasks for update
-using (assigned_user = auth.uid() or get_my_role() in ('admin','project_manager'));
+using (
+  family_id = get_my_family_id()
+  and (assigned_user = auth.uid() or get_my_role() in ('admin','project_manager'))
+)
+with check (
+  family_id = get_my_family_id()
+  and (assigned_user = auth.uid() or get_my_role() in ('admin','project_manager'))
+);
 
 create policy "family reads task comments"
 on task_comments for select
@@ -1570,7 +1584,14 @@ with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasu
 
 create policy "authorized manage documents"
 on documents for update
-using (uploaded_by = auth.uid() or get_my_role() = 'admin');
+using (
+  family_id = get_my_family_id()
+  and (uploaded_by = auth.uid() or get_my_role() in ('admin','treasurer'))
+)
+with check (
+  family_id = get_my_family_id()
+  and (uploaded_by = auth.uid() or get_my_role() in ('admin','treasurer'))
+);
 
 -- NOTIFICATIONS: users read own notifications
 create policy "users read own notifications"

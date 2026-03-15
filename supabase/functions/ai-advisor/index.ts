@@ -10,6 +10,9 @@
  *   EXPECTED_ANON_KEY
  *   ALLOWED_ORIGIN (optional, defaults to FamilyOS Vercel URL)
  *   GEMINI_MODEL (optional)
+ *   AI_RATE_LIMIT_WINDOW_MS (optional)
+ *   AI_RATE_LIMIT_MAX_ANSWERS (optional)
+ *   AI_RATE_LIMIT_MAX_INSIGHTS (optional)
  *
  * This function does not rely on Supabase JWT auth.
  * It protects itself with origin + anon-key checks.
@@ -33,6 +36,18 @@ type InsightDraft = {
   severity: string;
 };
 
+type RateLimitDecision = {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  resetAt: number;
+  retryAfterSeconds: number;
+};
+
+type JsonHeaders = Record<string, string>;
+
+const RATE_LIMIT_STORE = new Map<string, number[]>();
+
 function corsHeaders(origin: string) {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -43,10 +58,13 @@ function corsHeaders(origin: string) {
   };
 }
 
-function json(body: unknown, status = 200, origin = DEFAULT_ALLOWED_ORIGIN) {
+function json(body: unknown, status = 200, origin = DEFAULT_ALLOWED_ORIGIN, extraHeaders: JsonHeaders = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: corsHeaders(origin),
+    headers: {
+      ...corsHeaders(origin),
+      ...extraHeaders,
+    },
   });
 }
 
@@ -70,6 +88,60 @@ function extractGeminiText(data: any) {
 function clip(value: unknown, maxLength: number) {
   const text = String(value || "").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength - 1).trim()}...` : text;
+}
+
+function envNumber(name: string, fallback: number, min = 1) {
+  const raw = Number(Deno.env.get(name));
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.floor(raw));
+}
+
+function getClientAddress(req: Request) {
+  const forwardedFor = req.headers.get("x-forwarded-for") || "";
+  const firstForwarded = forwardedFor.split(",").map((part) => part.trim()).find(Boolean);
+  return (
+    firstForwarded ||
+    req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function rateLimitHeaders(decision: RateLimitDecision): JsonHeaders {
+  return {
+    "X-RateLimit-Limit": String(decision.limit),
+    "X-RateLimit-Remaining": String(Math.max(0, decision.remaining)),
+    "X-RateLimit-Reset": String(decision.resetAt),
+  };
+}
+
+function evaluateRateLimit(key: string, limit: number, windowMs: number): RateLimitDecision {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  const recentHits = (RATE_LIMIT_STORE.get(key) || []).filter((timestamp) => timestamp > windowStart);
+
+  if (recentHits.length >= limit) {
+    const resetAt = recentHits[0] + windowMs;
+    RATE_LIMIT_STORE.set(key, recentHits);
+    return {
+      allowed: false,
+      limit,
+      remaining: 0,
+      resetAt,
+      retryAfterSeconds: Math.max(1, Math.ceil((resetAt - now) / 1000)),
+    };
+  }
+
+  recentHits.push(now);
+  RATE_LIMIT_STORE.set(key, recentHits);
+  const resetAt = recentHits[0] + windowMs;
+  return {
+    allowed: true,
+    limit,
+    remaining: Math.max(0, limit - recentHits.length),
+    resetAt,
+    retryAfterSeconds: Math.max(1, Math.ceil((resetAt - now) / 1000)),
+  };
 }
 
 function parseInsightPayload(text: string): InsightDraft[] {
@@ -187,13 +259,39 @@ Deno.serve(async (req) => {
     const familyContext = payload?.familyContext || {};
     const mode = payload?.mode === "insights" ? "insights" : "answer";
 
+    const windowMs = envNumber("AI_RATE_LIMIT_WINDOW_MS", 60_000, 1_000);
+    const maxAnswers = envNumber("AI_RATE_LIMIT_MAX_ANSWERS", 8, 1);
+    const maxInsights = envNumber("AI_RATE_LIMIT_MAX_INSIGHTS", 4, 1);
+    const clientKey = `${mode}:${origin}:${getClientAddress(req)}`;
+    const decision = evaluateRateLimit(
+      clientKey,
+      mode === "insights" ? maxInsights : maxAnswers,
+      windowMs,
+    );
+
+    if (!decision.allowed) {
+      return json(
+        {
+          error: "Rate limit exceeded. Please wait before trying again.",
+          retry_after_seconds: decision.retryAfterSeconds,
+          mode,
+        },
+        429,
+        configured,
+        {
+          ...rateLimitHeaders(decision),
+          "Retry-After": String(decision.retryAfterSeconds),
+        },
+      );
+    }
+
     if (!question && mode === "answer") {
-      return json({ error: "Missing question" }, 400, configured);
+      return json({ error: "Missing question" }, 400, configured, rateLimitHeaders(decision));
     }
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiApiKey) {
-      return json({ error: "GEMINI_API_KEY not configured" }, 500, configured);
+      return json({ error: "GEMINI_API_KEY not configured" }, 500, configured, rateLimitHeaders(decision));
     }
 
     const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
@@ -242,6 +340,7 @@ Deno.serve(async (req) => {
         { error: `AI service error: ${detailMessage}`, details: data, model },
         502,
         configured,
+        rateLimitHeaders(decision),
       );
     }
 
@@ -249,16 +348,21 @@ Deno.serve(async (req) => {
     if (mode === "insights") {
       const insights = parseInsightPayload(text);
       if (!insights.length) {
-        return json({ error: "AI service returned no usable insights.", raw: text, model }, 502, configured);
+        return json(
+          { error: "AI service returned no usable insights.", raw: text, model },
+          502,
+          configured,
+          rateLimitHeaders(decision),
+        );
       }
-      return json({ insights, model }, 200, configured);
+      return json({ insights, model }, 200, configured, rateLimitHeaders(decision));
     }
 
     if (!text) {
-      return json({ error: "AI service returned no answer.", model }, 502, configured);
+      return json({ error: "AI service returned no answer.", model }, 502, configured, rateLimitHeaders(decision));
     }
 
-    return json({ answer: text, model }, 200, configured);
+    return json({ answer: text, model }, 200, configured, rateLimitHeaders(decision));
   } catch (err) {
     console.error("Edge Function error:", err);
     return json(
