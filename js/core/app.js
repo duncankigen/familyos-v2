@@ -1056,7 +1056,7 @@ function accountCenterSection(section) {
 }
 
 function renderOnboardingShell(profile, user) {
-  const displayName = (profile?.full_name || user?.email || 'Member').trim();
+  const displayName = escapeHtml((profile?.full_name || user?.email || 'Member').trim());
   setTopbar('Finish Setup');
   document.getElementById('page-content').innerHTML = `
     <div class="content">
