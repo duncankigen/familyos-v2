@@ -81,13 +81,21 @@ function adminFamilyName(familyId) {
   return family?.name || 'No family linked';
 }
 
+function adminMetaLine(label, value) {
+  return `
+    <div class="admin-mobile-meta-line">
+      <span class="admin-mobile-meta-label">${label}</span>
+      <span class="admin-mobile-meta-value">${value}</span>
+    </div>`;
+}
+
 function adminSupportTable(tickets) {
   if (!tickets.length) {
     return `<div class="admin-empty">No support tickets have been submitted yet.</div>`;
   }
 
   return `
-    <div class="table-wrap">
+    <div class="table-wrap admin-desktop-table">
       <table>
         <thead>
           <tr>
@@ -128,6 +136,34 @@ function adminSupportTable(tickets) {
           `).join('')}
         </tbody>
       </table>
+    </div>
+    <div class="admin-mobile-list">
+      ${tickets.map((ticket) => `
+        <div class="admin-mobile-card">
+          <div class="admin-mobile-head">
+            <div>
+              <div class="admin-row-title">${escapeHtml(ticket.subject || 'Untitled ticket')}</div>
+              <div class="admin-row-meta">${escapeHtml(supportCategoryLabel(ticket.category))}</div>
+            </div>
+            ${supportStatusBadge(ticket.status)}
+          </div>
+          <div class="admin-row-copy">${escapeHtml(adminClip(ticket.message))}</div>
+          <div class="admin-mobile-meta">
+            ${adminMetaLine('Reporter', escapeHtml(adminUserName(ticket.submitted_by)))}
+            ${adminMetaLine('Family', escapeHtml(adminFamilyName(ticket.family_id)))}
+            ${adminMetaLine('Priority', adminPriorityBadge(ticket.priority))}
+            ${adminMetaLine('Updated', `<span>${fmtDate(ticket.updated_at || ticket.created_at)}</span><span class="admin-mobile-meta-sub">${ago(ticket.updated_at || ticket.created_at)}</span>`)}
+          </div>
+          <div class="admin-mobile-actions">
+            ${adminRowMenu([
+              adminMenuAction('Review ticket', `openAdminSupportTicket('${ticket.id}')`),
+              adminMenuAction('Mark in progress', `adminSetSupportTicketStatus('${ticket.id}', 'in_progress')`),
+              adminMenuAction('Resolve', `adminSetSupportTicketStatus('${ticket.id}', 'resolved')`),
+              adminMenuAction('Close', `adminSetSupportTicketStatus('${ticket.id}', 'closed')`, true),
+            ])}
+          </div>
+        </div>
+      `).join('')}
     </div>`;
 }
 
@@ -137,7 +173,7 @@ function adminFamilyTable(families, users, tickets) {
   }
 
   return `
-    <div class="table-wrap">
+    <div class="table-wrap admin-desktop-table">
       <table>
         <thead>
           <tr>
@@ -173,6 +209,31 @@ function adminFamilyTable(families, users, tickets) {
           }).join('')}
         </tbody>
       </table>
+    </div>
+    <div class="admin-mobile-list">
+      ${families.map((family) => {
+        const memberCount = users.filter((user) => user.family_id === family.id).length;
+        const ticketCount = tickets.filter((ticket) => ticket.family_id === family.id && ['open', 'in_progress'].includes(ticket.status)).length;
+        return `
+          <div class="admin-mobile-card">
+            <div class="admin-mobile-head">
+              <div>
+                <div class="admin-row-title">${escapeHtml(family.name || 'Untitled family')}</div>
+                <div class="admin-row-copy">${escapeHtml(adminClip(family.description || 'No description provided.', 95))}</div>
+              </div>
+              <span class="badge b-blue">${memberCount} members</span>
+            </div>
+            <div class="admin-mobile-meta">
+              ${adminMetaLine('Open tickets', String(ticketCount))}
+              ${adminMetaLine('Created', `<span>${fmtDate(family.created_at)}</span><span class="admin-mobile-meta-sub">${ago(family.created_at)}</span>`)}
+            </div>
+            <div class="admin-mobile-actions">
+              ${adminRowMenu([
+                adminMenuAction('View workspace summary', `openAdminFamilySummary('${family.id}')`),
+              ])}
+            </div>
+          </div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -182,7 +243,7 @@ function adminUserTable(users) {
   }
 
   return `
-    <div class="table-wrap">
+    <div class="table-wrap admin-desktop-table">
       <table>
         <thead>
           <tr>
@@ -218,6 +279,30 @@ function adminUserTable(users) {
           `).join('')}
         </tbody>
       </table>
+    </div>
+    <div class="admin-mobile-list">
+      ${users.map((user) => `
+        <div class="admin-mobile-card">
+          <div class="admin-mobile-head">
+            <div>
+              <div class="admin-row-title">${escapeHtml(user.full_name || 'Unnamed user')}</div>
+              <div class="admin-row-meta">${user.id === State.uid ? 'Current signed-in platform admin' : 'FamilyOS account'}</div>
+            </div>
+            ${adminStatusBadge(Boolean(user.is_active))}
+          </div>
+          <div class="admin-mobile-meta">
+            ${adminMetaLine('Role', roleBadge(user.role || 'member'))}
+            ${adminMetaLine('Family', escapeHtml(adminFamilyName(user.family_id)))}
+            ${adminMetaLine('Created', `<span>${fmtDate(user.created_at)}</span><span class="admin-mobile-meta-sub">${ago(user.created_at)}</span>`)}
+          </div>
+          <div class="admin-mobile-actions">
+            ${adminRowMenu([
+              adminMenuAction('Review account', `openAdminUserAccount('${user.id}')`),
+              adminMenuAction(user.is_active ? 'Deactivate account' : 'Reactivate account', `adminSetUserActive('${user.id}', ${user.is_active ? 'false' : 'true'})`, user.is_active),
+            ])}
+          </div>
+        </div>
+      `).join('')}
     </div>`;
 }
 
