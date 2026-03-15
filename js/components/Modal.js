@@ -24,6 +24,7 @@ const Modal = {
     }
 
     const footer = document.getElementById('modal-footer');
+    footer.style.display = 'flex';
     footer.innerHTML = `<button class="btn" onclick="Modal.close()">Cancel</button>`;
 
     buttons.forEach(b => {

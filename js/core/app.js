@@ -379,26 +379,328 @@ function openProfileCenter(section = 'profile') {
   const user = State.currentUser || {};
   const displayName = escapeHtml((profile.full_name || user.email || 'Member').trim());
 
-  Modal.open('Account, Help & Policies', `
-    <div class="profile-center">
-      <div class="profile-center-subtitle">
-        Manage your account options and read how FamilyOS is designed to operate across your family workspace.
+  Modal.open('Account Center', `
+    <div class="account-center">
+      ${accountCenterNav(normalizedSection)}
+      <div class="account-center-main">
+        <div class="account-center-subtitle">
+          Manage your account experience, support resources, policies, and platform-level tools from one place.
+        </div>
+        ${accountCenterSection(normalizedSection)}
       </div>
-      ${profileCenterNav(normalizedSection)}
-      ${profileCenterSection(normalizedSection)}
     </div>
   `);
 
   const modalTitle = document.getElementById('modal-title');
   if (modalTitle) {
-    modalTitle.textContent = `Account, Help & Policies`;
+    modalTitle.textContent = 'Account Center';
     modalTitle.setAttribute('title', displayName);
   }
 
   const modalCard = document.querySelector('#modal .modal');
   if (modalCard) {
-    modalCard.style.maxWidth = '860px';
+    modalCard.style.maxWidth = '1100px';
   }
+
+  const footer = document.getElementById('modal-footer');
+  if (footer) {
+    footer.style.display = 'none';
+  }
+}
+
+function isPlatformAdminUser() {
+  const role = String(State.currentProfile?.role || '').toLowerCase();
+  if (role === 'super_admin') return true;
+
+  const email = String(State.currentUser?.email || '').trim().toLowerCase();
+  const configured = window.FAMILYOS_CONFIG?.platform?.adminEmails;
+  const adminEmails = Array.isArray(configured)
+    ? configured.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean)
+    : [];
+
+  return Boolean(email && adminEmails.includes(email));
+}
+
+function accountCenterAccordion(items, tone = 'blue') {
+  return `
+    <div class="account-accordion">
+      ${(items || []).map((item, index) => `
+        <details class="account-accordion-item account-accordion-${tone}" ${index === 0 ? 'open' : ''}>
+          <summary>${item.question}</summary>
+          <div class="account-accordion-body">${item.answer}</div>
+        </details>
+      `).join('')}
+    </div>`;
+}
+
+function accountCenterNav(activeSection) {
+  const groups = [
+    {
+      title: 'Account',
+      items: [['profile', 'Profile'], ['settings', 'Settings']],
+    },
+    {
+      title: 'Help & Policies',
+      items: [
+        ['help', 'Help Center'],
+        ['faq', 'FAQ'],
+        ['guide', 'User Guide'],
+        ['terms', 'Terms of Use'],
+        ['privacy', 'Privacy Policy'],
+        ['contact', 'Contact Support'],
+      ],
+    },
+  ];
+
+  if (isPlatformAdminUser()) {
+    groups.push({
+      title: 'Platform',
+      items: [['admin', 'Admin']],
+    });
+  }
+
+  return `
+    <div class="account-center-sidebar">
+      ${groups.map((group) => `
+        <div class="account-center-group">
+          <div class="account-center-group-label">${group.title}</div>
+          ${group.items.map(([key, label]) => `
+            <button class="account-center-nav-btn ${activeSection === key ? 'active' : ''}"
+                    onclick="openProfileCenter('${key}')">${label}</button>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function accountCenterSection(section) {
+  const profile = State.currentProfile || {};
+  const user = State.currentUser || {};
+  const familyName = document.getElementById('sb-family-name')?.textContent || 'Family Workspace';
+  const displayName = escapeHtml((profile.full_name || user.email || 'Member').trim());
+  const role = escapeHtml(profile.role || 'member');
+  const email = escapeHtml(user.email || 'No email on file');
+  const familyId = escapeHtml(profile.family_id || 'Not linked yet');
+  const updatedLabel = 'Updated 15 Mar 2026';
+
+  const helpTopics = [
+    {
+      question: 'How should I use FamilyOS each week?',
+      answer: 'Start in Dashboard for the current family snapshot, then move into the area that needs action: Finance for money movement, Projects and Tasks for delivery work, Farm Manager for farm operations, and Vault for shared records. Use Reports or exports when preparing family meetings or external sharing.',
+    },
+    {
+      question: 'How do I keep reports and totals trustworthy?',
+      answer: 'Record contributions as money in and expenses as money out. Link expenses to projects and vendors where possible, avoid duplicate manual records, and review unusual totals before exporting. The more disciplined the original entries are, the more trustworthy the dashboard, reports, and AI context become.',
+    },
+    {
+      question: 'How should we use Projects, Tasks, and Farm Manager together?',
+      answer: 'Use Projects to define the work, Tasks to drive execution, and Farm Manager for farming-specific operational activity such as inputs, outputs, livestock events, and farm cost signals. Keep related records linked so the family can see cost, responsibility, and progress together.',
+    },
+    {
+      question: 'What is the right way to use Vault and AI?',
+      answer: 'Use Vault for documents and shared media worth keeping over time. Use AI Advisor for pattern spotting, prioritization, and family planning support, but validate important conclusions before acting on money, legal, school, or health decisions.',
+    },
+  ];
+
+  const faqTopics = [
+    {
+      question: 'Why can I view a section but not edit it?',
+      answer: 'FamilyOS separates visibility from management. Some records are visible for awareness, but editing is limited by role, record ownership, and safety rules.',
+    },
+    {
+      question: 'Why did an upload or save fail?',
+      answer: 'The most common causes are missing fields, database policy restrictions, or storage policy problems. If it is a Vault upload, confirm the bucket and policies are configured and that your role allows the action.',
+    },
+    {
+      question: 'Can I store Google Drive or shared media links?',
+      answer: 'Yes. Family Media is the intended Vault category for shared photo albums, Google Drive links, and similar family media collections.',
+    },
+    {
+      question: 'What happens if two users edit the same thing?',
+      answer: 'Some areas still behave like latest-save-wins. That means the most recent save can overwrite an earlier edit if two users change the same record without coordinating. Stronger conflict handling is part of the ship-readiness work.',
+    },
+  ];
+
+  if (section === 'settings') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-green">
+          <div class="account-center-hero-title">Settings</div>
+          <div class="account-center-hero-copy">Manage your account experience, browser-level preferences, and the parts of FamilyOS that should feel consistent every time you return.</div>
+        </div>
+        <div class="account-center-grid">
+          <div class="card">
+            <div class="card-title">Appearance</div>
+            <div class="account-center-copy">Theme preference is stored in this browser so the interface feels familiar each time you sign in.</div>
+            <div class="account-center-actions" style="margin-top:12px;">
+              <button class="btn btn-sm" onclick="toggleTheme()">Toggle Theme</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Session</div>
+            <div class="account-center-list">
+              <div>Signed in as: ${email}</div>
+              <div>Workspace: ${escapeHtml(familyName)}</div>
+              <div>Role: ${role}</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Planned settings</div>
+            <div class="account-center-list">
+              <div>Notification preferences</div>
+              <div>Default landing page</div>
+              <div>Report and export preferences</div>
+              <div>Support routing preferences</div>
+            </div>
+          </div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'help') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-blue">
+          <div class="account-center-hero-title">Help Center</div>
+          <div class="account-center-hero-copy">This space explains how to use FamilyOS well in real family operations, not just what each button does. Expand the topics below for guided help.</div>
+        </div>
+        <div class="account-center-panel">${accountCenterAccordion(helpTopics, 'blue')}</div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'faq') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-amber">
+          <div class="account-center-hero-title">FAQ</div>
+          <div class="account-center-hero-copy">Quick answers to the most common questions users have while working across records, uploads, AI, reporting, and collaboration.</div>
+        </div>
+        <div class="account-center-panel">${accountCenterAccordion(faqTopics, 'amber')}</div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'guide') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-green">
+          <div class="account-center-hero-title">User Guide</div>
+          <div class="account-center-hero-copy">This guide is the practical reference for how FamilyOS should be used across daily coordination, financial accountability, project work, farming, shared records, and governance.</div>
+        </div>
+        <div class="account-center-grid">
+          <div class="card"><div class="card-title">Getting started</div><div class="account-center-list"><div>Join or create the correct family workspace before entering any records.</div><div>Confirm your name, role, and family identity in the sidebar.</div><div>Use Dashboard first each session to see what needs attention now.</div></div></div>
+          <div class="card"><div class="card-title">Finance and obligations</div><div class="account-center-list"><div>Record contributions as incoming family money and expenses as outgoing family money.</div><div>Use School Fees and Emergency Fund for specialized obligations, but maintain clean cash records.</div><div>Review totals before sending exports outside the app.</div></div></div>
+          <div class="card"><div class="card-title">Operations and farming</div><div class="account-center-list"><div>Create projects when work has a budget, owner, or shared family impact.</div><div>Use tasks for execution and accountability.</div><div>Use Farm Manager for input cost, outputs, livestock events, and farm performance signals.</div></div></div>
+          <div class="card"><div class="card-title">Documents, meetings, and AI</div><div class="account-center-list"><div>Use Vault for records worth retaining, including family media links.</div><div>Use Meetings and Announcements for structured visibility and family governance.</div><div>Use AI Advisor for planning support, but verify high-stakes conclusions before acting.</div></div></div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'terms') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-red">
+          <div class="account-center-hero-title">Terms of Use</div>
+          <div class="account-center-hero-copy">These terms explain the responsibilities attached to using FamilyOS for family finance, governance, operations, documentation, planning, and advisory support.</div>
+        </div>
+        <div class="account-center-doc">
+          <div class="card"><div class="card-title">1. Acceptance and scope</div><div class="account-center-copy">By using FamilyOS, you agree to use the system only for legitimate family coordination, administration, financial recording, project management, farming operations, governance support, and shared record keeping. Access to the workspace is conditional on compliance with these terms and with family-specific rules applied by your administrators.</div></div>
+          <div class="card"><div class="card-title">2. Account responsibility</div><div class="account-center-copy">You are responsible for maintaining the security of your credentials and for actions performed through your account. You should not share your login casually or allow another person to operate the system as if they were you.</div></div>
+          <div class="card"><div class="card-title">3. Family workspace use</div><div class="account-center-copy">You should only use the workspace you are authorized to belong to, and you should only enter data relevant to that family context. Records such as contributions, expenses, school fees, projects, meetings, votes, vault files, and announcements should be entered in good faith and with reasonable care.</div></div>
+          <div class="card"><div class="card-title">4. Data accuracy and decisions</div><div class="account-center-copy">FamilyOS helps structure financial and operational information, but it does not create truth on its own. Users remain responsible for verifying the accuracy of entries and for checking the underlying evidence before making major money, governance, land, school, health, or investment decisions.</div></div>
+          <div class="card"><div class="card-title">5. Acceptable content and uploads</div><div class="account-center-copy">You must not use FamilyOS to upload unlawful, abusive, fraudulent, defamatory, or unauthorized content. Documents, photos, media links, and records placed in Vault should either belong to the family, be properly authorized for sharing, or be stored with informed consent.</div></div>
+          <div class="card"><div class="card-title">6. AI advisory limitation</div><div class="account-center-copy">AI Advisor and AI-generated insights are support tools for pattern recognition, prioritization, and discussion. They are not legal, accounting, agricultural, medical, or investment advice, and they do not replace human judgment or professional review.</div></div>
+          <div class="card"><div class="card-title">7. Misuse and updates</div><div class="account-center-copy">Access may be restricted where there is misuse, harmful conduct, or attempts to interfere with workspace integrity. FamilyOS may also evolve over time, and these terms may be updated as new operational, legal, or security requirements arise.</div></div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'privacy') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-blue">
+          <div class="account-center-hero-title">Privacy Policy</div>
+          <div class="account-center-hero-copy">This policy explains what FamilyOS stores, how the system uses that information, and what users should understand about shared family data, uploads, and AI-supported features.</div>
+        </div>
+        <div class="account-center-doc">
+          <div class="card"><div class="card-title">1. What the system stores</div><div class="account-center-copy">FamilyOS stores account identity such as your email, profile name, family membership, and role. It also stores family operational records including contributions, expenses, school fees, emergency activity, projects, tasks, farming records, vendor data, meetings, votes, announcements, vault documents, and exports derived from those records.</div></div>
+          <div class="card"><div class="card-title">2. Why the system uses this data</div><div class="account-center-copy">This information is used to authenticate users, separate family workspaces, apply permissions, calculate dashboards and reports, generate operational context, support accountability, and preserve records the family may need for planning, follow-up, or governance.</div></div>
+          <div class="card"><div class="card-title">3. Shared family access model</div><div class="account-center-copy">FamilyOS is designed as a shared family workspace. Some records may be visible to multiple members within the same family, subject to role boundaries and access settings. Users should enter sensitive information carefully and assume that shared workspace records are part of a broader family operating environment.</div></div>
+          <div class="card"><div class="card-title">4. Files, uploads, and external links</div><div class="account-center-copy">Vault may contain uploaded files as well as shared external links such as Google Drive or family media collections. Users are responsible for uploading or linking materials they are authorized to share. Availability may depend on storage configuration and on any external services hosting linked media.</div></div>
+          <div class="card"><div class="card-title">5. AI and privacy</div><div class="account-center-copy">When AI features are enabled, relevant family context may be processed to answer user questions or generate insights. This can include financial totals, task pressure, goals, project signals, farming metrics, and similar operational context. AI should be treated as a support tool, not as a guarantee.</div></div>
+          <div class="card"><div class="card-title">6. Retention and responsibility</div><div class="account-center-copy">Records may remain available for continuity, reporting, and accountability unless removed by authorized users. Because this is a shared family workspace, users should follow family governance practices around consent, confidentiality, and responsible record keeping.</div></div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'contact') {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-amber">
+          <div class="account-center-hero-title">Contact Support</div>
+          <div class="account-center-hero-copy">Use this section when you need to report a system issue, complaint, account problem, data inconsistency, or feature request to the platform owner. The DB-backed support workflow will be wired to a superadmin inbox in the next backend phase.</div>
+        </div>
+        <div class="account-center-grid">
+          <div class="card"><div class="card-title">What to include</div><div class="account-center-list"><div>What you were trying to do</div><div>Which page or section was involved</div><div>What happened instead</div><div>Whether the issue blocks your work fully or partially</div><div>Any family, project, or record context needed to reproduce the problem</div></div></div>
+          <div class="card"><div class="card-title">Support categories</div><div class="account-center-list"><div>Bug report</div><div>Account issue</div><div>Data issue</div><div>Feature request</div><div>Complaint</div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Support intake preview</div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Category</label><select class="form-select" disabled><option>Bug report</option></select></div>
+            <div class="form-group"><label class="form-label">Current workspace</label><input class="form-input" value="${escapeHtml(familyName)}" disabled /></div>
+          </div>
+          <div class="form-group"><label class="form-label">Subject</label><input class="form-input" value="Support submission will be enabled in the next phase" disabled /></div>
+          <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" disabled>Describe the issue, the page involved, what you expected, and what actually happened.</textarea></div>
+          <div class="account-center-copy">This gives support a proper home inside the account center now, while the superadmin inbox and persistence layer are completed next.</div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  if (section === 'admin' && isPlatformAdminUser()) {
+    return `
+      <div class="account-center-content">
+        <div class="account-center-hero ai-red">
+          <div class="account-center-hero-title">Platform Admin</div>
+          <div class="account-center-hero-copy">This section is reserved for the system owner or superadmin. It is where platform-wide family, account, support, and audit management will live once the backend superadmin layer is wired.</div>
+        </div>
+        <div class="account-center-grid">
+          <div class="card"><div class="card-title">Planned admin modules</div><div class="account-center-list"><div>Families management</div><div>User account management</div><div>Support inbox and complaint handling</div><div>Platform audit and issue triage</div></div></div>
+          <div class="card"><div class="card-title">Access intent</div><div class="account-center-copy">The superadmin model will be platform-level, not just another family role. That allows the system owner to manage families, receive system complaints, and inspect the platform intentionally without weakening the family-scoped model for everyone else.</div></div>
+        </div>
+        <div class="account-center-meta">${updatedLabel}</div>
+      </div>`;
+  }
+
+  return `
+    <div class="account-center-content">
+      <div class="account-center-hero ai-blue">
+        <div class="avatar av-md av-blue" style="width:48px;height:48px;font-size:15px;">${escapeHtml((displayName.match(/[A-Z0-9]/gi) || ['F']).slice(0, 2).join('').toUpperCase())}</div>
+        <div style="min-width:0;">
+          <div class="account-center-hero-title" style="margin-bottom:4px;">${displayName}</div>
+          <div class="tag-row" style="margin-top:0;">
+            <span class="badge b-blue">${escapeHtml(familyName)}</span>
+            <span class="badge b-gray">${role}</span>
+          </div>
+        </div>
+      </div>
+      <div class="account-center-grid">
+        <div class="card"><div class="card-title">Account</div><div class="details-grid"><div><div class="details-label">Email</div><div class="details-value">${email}</div></div><div><div class="details-label">Family ID</div><div class="details-value">${familyId}</div></div><div><div class="details-label">Role</div><div class="details-value">${role}</div></div><div><div class="details-label">Workspace</div><div class="details-value">${escapeHtml(familyName)}</div></div></div></div>
+        <div class="card"><div class="card-title">What your role supports</div><div class="account-center-copy">${escapeHtml(profileRoleSummary(profile.role))}</div></div>
+        <div class="card"><div class="card-title">Recommended next stops</div><div class="account-center-list"><div>Open <strong>Help Center</strong> when you need usage guidance.</div><div>Open <strong>User Guide</strong> for detailed workflows.</div><div>Open <strong>Contact Support</strong> if the issue goes beyond normal family admin help.</div></div></div>
+      </div>
+      <div class="account-center-actions">
+        <button class="btn btn-sm" onclick="toggleTheme()">Toggle Theme</button>
+        <button class="btn btn-sm" onclick="Auth.signOut()">Sign Out</button>
+      </div>
+      <div class="account-center-meta">${updatedLabel}</div>
+    </div>`;
 }
 
 function renderOnboardingShell(profile, user) {
