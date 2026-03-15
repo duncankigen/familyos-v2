@@ -665,6 +665,57 @@ create table if not exists ai_insights (
   constraint ai_type_check check (insight_type in ('finance_alert','task_warning','farming_advice','planning_tip','goal_update','school_fees'))
 );
 
+create table if not exists platform_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  display_name text,
+  is_active boolean not null default true,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create table if not exists support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid references families(id) on delete set null,
+  submitted_by uuid not null references users(id) on delete cascade,
+  category text not null,
+  subject text not null,
+  message text not null,
+  status text not null default 'open',
+  priority text not null default 'normal',
+  page_context text,
+  browser_context text,
+  admin_notes text,
+  resolved_at timestamptz,
+  resolved_by uuid references users(id) on delete set null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint support_ticket_category_check check (category in ('bug_report','account_issue','data_issue','feature_request','complaint','other')),
+  constraint support_ticket_status_check check (status in ('open','in_progress','resolved','closed')),
+  constraint support_ticket_priority_check check (priority in ('low','normal','high','urgent'))
+);
+
+create index if not exists support_tickets_submitted_by_idx
+on support_tickets(submitted_by, created_at desc);
+
+create index if not exists support_tickets_family_status_idx
+on support_tickets(family_id, status, created_at desc);
+
+create or replace function set_support_ticket_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists support_ticket_set_updated_at on support_tickets;
+create trigger support_ticket_set_updated_at
+before update on support_tickets
+for each row execute procedure set_support_ticket_updated_at();
+
 -- ============================================================
 -- STEP 16: ACTIVITY LOG (Audit Trail)
 -- ============================================================
@@ -717,6 +768,8 @@ alter table family_goals enable row level security;
 alter table documents enable row level security;
 alter table notifications enable row level security;
 alter table ai_insights enable row level security;
+alter table platform_admins enable row level security;
+alter table support_tickets enable row level security;
 alter table activity_logs enable row level security;
 
 -- ============================================================
@@ -737,6 +790,20 @@ language sql stable
 security definer
 as $$
   select role from users where id = auth.uid()
+$$;
+
+create or replace function is_platform_admin()
+returns boolean
+language sql stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.platform_admins
+    where user_id = auth.uid()
+      and is_active = true
+  )
 $$;
 
 create or replace function get_my_profile()
@@ -1049,6 +1116,15 @@ create policy "admins update family"
 on families for update
 using (id = get_my_family_id() and get_my_role() in ('admin'));
 
+create policy "platform admins read families"
+on families for select
+using (is_platform_admin());
+
+create policy "platform admins update families"
+on families for update
+using (is_platform_admin())
+with check (is_platform_admin());
+
 -- USERS: family members can see each other
 create policy "users read own profile"
 on users for select
@@ -1065,6 +1141,15 @@ using (id = auth.uid());
 create policy "admins manage members"
 on users for all
 using (family_id = get_my_family_id() and get_my_role() = 'admin');
+
+create policy "platform admins read users"
+on users for select
+using (is_platform_admin());
+
+create policy "platform admins update users"
+on users for update
+using (is_platform_admin())
+with check (is_platform_admin());
 
 -- SKILLS: readable by all authenticated users
 create policy "skills readable by all"
@@ -1470,6 +1555,38 @@ using (family_id = get_my_family_id());
 create policy "system manages ai insights"
 on ai_insights for all
 using (family_id = get_my_family_id() and get_my_role() in ('admin'));
+
+create policy "users read own platform admin row"
+on platform_admins for select
+using (user_id = auth.uid());
+
+create policy "platform admins read all platform admins"
+on platform_admins for select
+using (is_platform_admin());
+
+create policy "users read own support tickets"
+on support_tickets for select
+using (submitted_by = auth.uid());
+
+create policy "users create own support tickets"
+on support_tickets for insert
+with check (
+  submitted_by = auth.uid()
+  and (family_id is null or family_id = get_my_family_id())
+);
+
+create policy "platform admins read all support tickets"
+on support_tickets for select
+using (is_platform_admin());
+
+create policy "platform admins update support tickets"
+on support_tickets for update
+using (is_platform_admin())
+with check (is_platform_admin());
+
+create policy "platform admins delete support tickets"
+on support_tickets for delete
+using (is_platform_admin());
 
 -- ACTIVITY LOGS: all family members can read
 create policy "family reads activity logs"

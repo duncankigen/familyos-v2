@@ -406,9 +406,22 @@ function openProfileCenter(section = 'profile') {
   if (footer) {
     footer.style.display = 'none';
   }
+
+  if (normalizedSection === 'contact') {
+    hydrateContactSupportPanel().catch((error) => {
+      console.warn('[Account Center] Failed to hydrate support panel:', error);
+    });
+  }
+
+  if (normalizedSection === 'admin') {
+    hydrateAdminPanel().catch((error) => {
+      console.warn('[Account Center] Failed to hydrate admin panel:', error);
+    });
+  }
 }
 
 function isPlatformAdminUser() {
+  if (State.isPlatformAdmin) return true;
   const role = String(State.currentProfile?.role || '').toLowerCase();
   if (role === 'super_admin') return true;
 
@@ -419,6 +432,304 @@ function isPlatformAdminUser() {
     : [];
 
   return Boolean(email && adminEmails.includes(email));
+}
+
+async function loadPlatformAdminStatus() {
+  State.isPlatformAdmin = false;
+  if (!State.uid || !DB.client) return false;
+
+  const { data, error } = await DB.client
+    .from('platform_admins')
+    .select('user_id,is_active')
+    .eq('user_id', State.uid)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error) {
+    if (!String(error.message || '').toLowerCase().includes('platform_admins')) {
+      console.warn('[Account Center] Failed to load platform admin status:', error);
+    }
+    return false;
+  }
+
+  State.isPlatformAdmin = Boolean(data?.user_id && data?.is_active);
+  return State.isPlatformAdmin;
+}
+
+function supportCategoryLabel(category) {
+  const labels = {
+    bug_report: 'Bug report',
+    account_issue: 'Account issue',
+    data_issue: 'Data issue',
+    feature_request: 'Feature request',
+    complaint: 'Complaint',
+    other: 'Other',
+  };
+  return labels[category] || 'Other';
+}
+
+function supportStatusBadge(status) {
+  const map = {
+    open: 'b-red',
+    in_progress: 'b-amber',
+    resolved: 'b-green',
+    closed: 'b-gray',
+  };
+  return `<span class="badge ${map[status] || 'b-gray'}">${escapeHtml(String(status || 'open').replace(/_/g, ' '))}</span>`;
+}
+
+function setSupportFormStatus(message = '', tone = 'info') {
+  const el = document.getElementById('support-form-status');
+  if (!el) return;
+  if (!message) {
+    el.style.display = 'none';
+    el.textContent = '';
+    return;
+  }
+  const colors = {
+    info: 'var(--text2)',
+    success: 'var(--success)',
+    error: 'var(--danger)',
+  };
+  el.style.display = 'block';
+  el.style.color = colors[tone] || colors.info;
+  el.textContent = message;
+}
+
+async function hydrateContactSupportPanel() {
+  const listEl = document.getElementById('support-ticket-list');
+  if (!listEl || !DB.client || !State.uid) return;
+
+  listEl.innerHTML = `<div style="font-size:12px;color:var(--text3);">Loading your support history...</div>`;
+  const { data, error } = await DB.client
+    .from('support_tickets')
+    .select('id,category,subject,status,priority,created_at,updated_at')
+    .eq('submitted_by', State.uid)
+    .order('created_at', { ascending: false })
+    .limit(8);
+
+  if (error) {
+    const message = String(error.message || '');
+    if (message.toLowerCase().includes('support_tickets')) {
+      listEl.innerHTML = `<div style="font-size:12px;color:var(--text3);">Support history will appear here after the support SQL upgrade is applied.</div>`;
+      return;
+    }
+
+    console.warn('[Account Center] Failed to load support tickets:', error);
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--danger);">Unable to load support tickets right now.</div>`;
+    return;
+  }
+
+  if (!data?.length) {
+    listEl.innerHTML = `<div style="font-size:12px;color:var(--text3);">No support tickets submitted yet.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = data.map((ticket) => `
+    <div class="card" style="padding:12px 14px;">
+      <div class="flex-between" style="align-items:flex-start;gap:10px;margin-bottom:6px;">
+        <div style="min-width:0;">
+          <div style="font-size:13px;font-weight:700;">${escapeHtml(ticket.subject || 'Untitled')}</div>
+          <div style="font-size:12px;color:var(--text3);">${escapeHtml(supportCategoryLabel(ticket.category))} · ${ago(ticket.created_at)}</div>
+        </div>
+        ${supportStatusBadge(ticket.status)}
+      </div>
+      <div style="font-size:12px;color:var(--text2);">
+        Priority: ${escapeHtml(ticket.priority || 'normal')} · Updated ${ago(ticket.updated_at || ticket.created_at)}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function submitSupportTicket() {
+  const category = document.getElementById('support-category')?.value || 'bug_report';
+  const subject = document.getElementById('support-subject')?.value.trim() || '';
+  const message = document.getElementById('support-message')?.value.trim() || '';
+
+  if (!subject || !message) {
+    setSupportFormStatus('Add both a subject and a clear message before submitting.', 'error');
+    return;
+  }
+
+  setSupportFormStatus('');
+  const payload = {
+    family_id: State.fid || null,
+    submitted_by: State.uid,
+    category,
+    subject,
+    message,
+    status: 'open',
+    priority: 'normal',
+    page_context: State.currentPage || null,
+    browser_context: window.location.hash || window.location.pathname || null,
+  };
+
+  const { error } = await DB.client.from('support_tickets').insert(payload);
+  if (error) {
+    const errorText = String(error.message || '');
+    if (errorText.toLowerCase().includes('support_tickets')) {
+      setSupportFormStatus('Support submissions are not ready yet. Run the platform support SQL upgrade, then try again.', 'error');
+      return;
+    }
+    console.error('[Account Center] Failed to submit support ticket:', error);
+    setSupportFormStatus(errorText || 'Unable to submit support ticket right now.', 'error');
+    return;
+  }
+
+  document.getElementById('support-subject').value = '';
+  document.getElementById('support-message').value = '';
+  setSupportFormStatus('Support ticket submitted. The platform owner will be able to review it from the admin inbox.', 'success');
+  await hydrateContactSupportPanel();
+}
+
+function setAdminSectionHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+async function saveSupportTicketAdmin(ticketId) {
+  if (!ticketId || !isPlatformAdminUser()) return;
+
+  const status = document.getElementById(`admin-ticket-status-${ticketId}`)?.value || 'open';
+  const notes = document.getElementById(`admin-ticket-notes-${ticketId}`)?.value.trim() || null;
+  const payload = {
+    status,
+    admin_notes: notes,
+    resolved_at: ['resolved', 'closed'].includes(status) ? new Date().toISOString() : null,
+    resolved_by: ['resolved', 'closed'].includes(status) ? State.uid : null,
+  };
+
+  const { error } = await DB.client
+    .from('support_tickets')
+    .update(payload)
+    .eq('id', ticketId);
+
+  if (error) {
+    alert(error.message || 'Unable to update this support ticket right now.');
+    return;
+  }
+
+  await hydrateAdminPanel();
+}
+
+async function togglePlatformUserActive(userId, nextState) {
+  if (!userId || !isPlatformAdminUser()) return;
+
+  const { error } = await DB.client
+    .from('users')
+    .update({ is_active: nextState })
+    .eq('id', userId);
+
+  if (error) {
+    alert(error.message || 'Unable to update this user right now.');
+    return;
+  }
+
+  await hydrateAdminPanel();
+}
+
+async function hydrateAdminPanel() {
+  if (!isPlatformAdminUser() || !DB.client) return;
+
+  setAdminSectionHtml('admin-overview-metrics', `<div style="font-size:12px;color:var(--text3);">Loading admin overview...</div>`);
+  setAdminSectionHtml('admin-support-list', `<div style="font-size:12px;color:var(--text3);">Loading support inbox...</div>`);
+  setAdminSectionHtml('admin-family-list', `<div style="font-size:12px;color:var(--text3);">Loading family workspaces...</div>`);
+  setAdminSectionHtml('admin-user-list', `<div style="font-size:12px;color:var(--text3);">Loading user accounts...</div>`);
+
+  const [{ data: tickets, error: ticketError }, { data: families, error: familyError }, { data: users, error: userError }] = await Promise.all([
+    DB.client.from('support_tickets').select('id,family_id,submitted_by,category,subject,message,status,priority,admin_notes,created_at,updated_at').order('created_at', { ascending: false }).limit(10),
+    DB.client.from('families').select('id,name,description,created_at').order('created_at', { ascending: false }).limit(12),
+    DB.client.from('users').select('id,full_name,role,is_active,family_id,created_at').order('created_at', { ascending: false }).limit(20),
+  ]);
+
+  if (ticketError || familyError || userError) {
+    const error = ticketError || familyError || userError;
+    const message = error?.message || 'Unable to load admin data right now.';
+    setAdminSectionHtml('admin-overview-metrics', `<div style="font-size:12px;color:var(--danger);">${escapeHtml(message)}</div>`);
+    setAdminSectionHtml('admin-support-list', `<div style="font-size:12px;color:var(--danger);">Admin policies are not ready or the platform support SQL upgrade still needs to be applied.</div>`);
+    setAdminSectionHtml('admin-family-list', '');
+    setAdminSectionHtml('admin-user-list', '');
+    return;
+  }
+
+  const familyNameById = Object.fromEntries((families || []).map((family) => [family.id, family.name]));
+  const userNameById = Object.fromEntries((users || []).map((member) => [member.id, member.full_name || 'Member']));
+
+  const openTickets = (tickets || []).filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length;
+  const activeUsers = (users || []).filter((member) => member.is_active).length;
+
+  setAdminSectionHtml('admin-overview-metrics', `
+    <div class="account-center-grid">
+      <div class="metric-card"><div class="metric-label">Families</div><div class="metric-value">${(families || []).length}</div><div class="metric-sub">Tracked workspaces</div></div>
+      <div class="metric-card"><div class="metric-label">Users</div><div class="metric-value">${(users || []).length}</div><div class="metric-sub">${activeUsers} active accounts</div></div>
+      <div class="metric-card"><div class="metric-label">Support</div><div class="metric-value">${openTickets}</div><div class="metric-sub">Open or in progress</div></div>
+    </div>
+  `);
+
+  setAdminSectionHtml('admin-support-list', (tickets || []).length
+    ? (tickets || []).map((ticket) => `
+      <div class="card" style="padding:12px 14px;">
+        <div class="flex-between" style="align-items:flex-start;gap:10px;margin-bottom:8px;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:700;">${escapeHtml(ticket.subject || 'Untitled ticket')}</div>
+            <div style="font-size:12px;color:var(--text3);">${escapeHtml(supportCategoryLabel(ticket.category))} · ${escapeHtml(userNameById[ticket.submitted_by] || 'Member')} · ${ago(ticket.created_at)}</div>
+            <div style="font-size:12px;color:var(--text3);">${escapeHtml(familyNameById[ticket.family_id] || 'No family linked')}</div>
+          </div>
+          ${supportStatusBadge(ticket.status)}
+        </div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;margin-bottom:10px;">${escapeHtml(ticket.message || '')}</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select id="admin-ticket-status-${ticket.id}" class="form-select">
+              ${['open','in_progress','resolved','closed'].map((status) => `<option value="${status}" ${ticket.status === status ? 'selected' : ''}>${status.replace(/_/g, ' ')}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Priority</label>
+            <input class="form-input" value="${escapeHtml(ticket.priority || 'normal')}" disabled />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Admin notes</label>
+          <textarea id="admin-ticket-notes-${ticket.id}" class="form-textarea" style="min-height:90px;">${escapeHtml(ticket.admin_notes || '')}</textarea>
+        </div>
+        <div class="account-center-actions">
+          <button class="btn btn-sm btn-primary" onclick="saveSupportTicketAdmin('${ticket.id}')">Save Ticket</button>
+        </div>
+      </div>
+    `).join('')
+    : `<div style="font-size:12px;color:var(--text3);">No support tickets have been submitted yet.</div>`);
+
+  setAdminSectionHtml('admin-family-list', (families || []).length
+    ? (families || []).map((family) => `
+      <div class="card" style="padding:12px 14px;">
+        <div style="font-size:13px;font-weight:700;">${escapeHtml(family.name || 'Untitled family')}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;">Created ${ago(family.created_at)}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:8px;">${escapeHtml(family.description || 'No description provided.')}</div>
+      </div>
+    `).join('')
+    : `<div style="font-size:12px;color:var(--text3);">No families found.</div>`);
+
+  setAdminSectionHtml('admin-user-list', (users || []).length
+    ? (users || []).map((member) => `
+      <div class="card" style="padding:12px 14px;">
+        <div class="flex-between" style="align-items:flex-start;gap:10px;">
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:700;">${escapeHtml(member.full_name || 'Unnamed user')}</div>
+            <div style="font-size:12px;color:var(--text3);">${escapeHtml(familyNameById[member.family_id] || 'No family linked')} · ${escapeHtml(member.role || 'member')}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px;">Created ${ago(member.created_at)}</div>
+          </div>
+          <span class="badge ${member.is_active ? 'b-green' : 'b-gray'}">${member.is_active ? 'active' : 'inactive'}</span>
+        </div>
+        <div class="account-center-actions" style="margin-top:10px;">
+          <button class="btn btn-sm" onclick="togglePlatformUserActive('${member.id}', ${member.is_active ? 'false' : 'true'})">
+            ${member.is_active ? 'Deactivate' : 'Reactivate'}
+          </button>
+        </div>
+      </div>
+    `).join('')
+    : `<div style="font-size:12px;color:var(--text3);">No users found.</div>`);
 }
 
 function accountCenterAccordion(items, tone = 'blue') {
@@ -650,14 +961,33 @@ function accountCenterSection(section) {
           <div class="card"><div class="card-title">Support categories</div><div class="account-center-list"><div>Bug report</div><div>Account issue</div><div>Data issue</div><div>Feature request</div><div>Complaint</div></div></div>
         </div>
         <div class="card">
-          <div class="card-title">Support intake preview</div>
+          <div class="card-title">Submit a support ticket</div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Category</label><select class="form-select" disabled><option>Bug report</option></select></div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select id="support-category" class="form-select">
+                <option value="bug_report">Bug report</option>
+                <option value="account_issue">Account issue</option>
+                <option value="data_issue">Data issue</option>
+                <option value="feature_request">Feature request</option>
+                <option value="complaint">Complaint</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
             <div class="form-group"><label class="form-label">Current workspace</label><input class="form-input" value="${escapeHtml(familyName)}" disabled /></div>
           </div>
-          <div class="form-group"><label class="form-label">Subject</label><input class="form-input" value="Support submission will be enabled in the next phase" disabled /></div>
-          <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" disabled>Describe the issue, the page involved, what you expected, and what actually happened.</textarea></div>
-          <div class="account-center-copy">This gives support a proper home inside the account center now, while the superadmin inbox and persistence layer are completed next.</div>
+          <div class="form-group"><label class="form-label">Subject</label><input id="support-subject" class="form-input" placeholder="Short summary of the issue" /></div>
+          <div class="form-group"><label class="form-label">Message</label><textarea id="support-message" class="form-textarea" placeholder="Describe what happened, what you expected, and any family or page context that will help the platform owner investigate."></textarea></div>
+          <div id="support-form-status" style="display:none;font-size:12px;"></div>
+          <div class="account-center-actions" style="margin-top:12px;">
+            <button class="btn btn-primary" onclick="submitSupportTicket()">Submit Ticket</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Your recent tickets</div>
+          <div id="support-ticket-list" class="account-center-panel">
+            <div style="font-size:12px;color:var(--text3);">Open this section after the support SQL upgrade to load your submitted tickets here.</div>
+          </div>
         </div>
         <div class="account-center-meta">${updatedLabel}</div>
       </div>`;
@@ -670,9 +1000,31 @@ function accountCenterSection(section) {
           <div class="account-center-hero-title">Platform Admin</div>
           <div class="account-center-hero-copy">This section is reserved for the system owner or superadmin. It is where platform-wide family, account, support, and audit management will live once the backend superadmin layer is wired.</div>
         </div>
+        <div class="card">
+          <div class="card-title">Overview</div>
+          <div id="admin-overview-metrics" class="account-center-panel">
+            <div style="font-size:12px;color:var(--text3);">Loading admin overview...</div>
+          </div>
+        </div>
         <div class="account-center-grid">
-          <div class="card"><div class="card-title">Planned admin modules</div><div class="account-center-list"><div>Families management</div><div>User account management</div><div>Support inbox and complaint handling</div><div>Platform audit and issue triage</div></div></div>
-          <div class="card"><div class="card-title">Access intent</div><div class="account-center-copy">The superadmin model will be platform-level, not just another family role. That allows the system owner to manage families, receive system complaints, and inspect the platform intentionally without weakening the family-scoped model for everyone else.</div></div>
+          <div class="card">
+            <div class="card-title">Support Inbox</div>
+            <div id="admin-support-list" class="account-center-panel">
+              <div style="font-size:12px;color:var(--text3);">Loading support inbox...</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">Families</div>
+            <div id="admin-family-list" class="account-center-panel">
+              <div style="font-size:12px;color:var(--text3);">Loading family workspaces...</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">User Accounts</div>
+          <div id="admin-user-list" class="account-center-grid">
+            <div style="font-size:12px;color:var(--text3);">Loading user accounts...</div>
+          </div>
         </div>
         <div class="account-center-meta">${updatedLabel}</div>
       </div>`;
@@ -832,6 +1184,7 @@ async function ensureUserProfile() {
 async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
+  await loadPlatformAdminStatus();
   setSidebarIdentity(profile, user);
   Sidebar.updateSectionIndicator('announcements', 0);
   Sidebar.updateSectionIndicator('tasks', 0);
@@ -894,6 +1247,7 @@ function resetSessionState() {
   State.currentUser = null;
   State.currentProfile = null;
   State.currentFamilyId = null;
+  State.isPlatformAdmin = false;
   State.unreadAnnouncements = 0;
   State.unreadNotifications = 0;
   State.sectionIndicators = {};
