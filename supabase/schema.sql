@@ -1929,7 +1929,7 @@ on conflict (name) do nothing;
 --    - Optionally enable phone OTP for mobile users
 -- 
 -- 2. In Supabase Storage → Create buckets:
---    - "documents" (for vault files) — set RLS: authenticated users
+--    - "documents" (for vault files) — keep private and apply family-scoped Storage policies
 --    - "receipts" (for expense receipts)
 --    - "avatars" (for user profile photos)
 -- 

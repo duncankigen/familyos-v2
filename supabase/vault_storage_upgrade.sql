@@ -1,11 +1,11 @@
 -- ============================================================
 -- FAMILYOS — VAULT STORAGE AND POLICY UPGRADE
--- Creates the documents bucket and aligns storage/document RLS
+-- Creates the documents bucket, keeps it private, and aligns storage/document RLS
 -- with the Vault page upload and save flow.
 -- ============================================================
 
 insert into storage.buckets (id, name, public)
-values ('documents', 'documents', true)
+values ('documents', 'documents', false)
 on conflict (id) do update
 set name = excluded.name,
     public = excluded.public;
@@ -13,7 +13,11 @@ set name = excluded.name,
 drop policy if exists "family read documents bucket" on storage.objects;
 create policy "family read documents bucket"
 on storage.objects for select
-using (bucket_id = 'documents');
+using (
+  bucket_id = 'documents'
+  and auth.role() = 'authenticated'
+  and (storage.foldername(name))[1] = public.get_my_family_id()::text
+);
 
 drop policy if exists "family upload documents bucket" on storage.objects;
 create policy "family upload documents bucket"

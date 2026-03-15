@@ -9,6 +9,8 @@ const VaultPage = {
   search: '',
 };
 
+const VAULT_BUCKET = 'documents';
+
 function canManageDocuments() {
   return ['admin', 'treasurer'].includes(State.currentProfile?.role);
 }
@@ -69,14 +71,21 @@ function documentCategoryLabel(category) {
 function documentLinkMeta(url) {
   const value = String(url || '').trim();
   if (!value) return null;
+  const storagePath = documentStorageObjectPath(value);
+  if (storagePath) {
+    return {
+      url: value,
+      hostLabel: 'Stored in FamilyOS Vault',
+      isExternal: false,
+    };
+  }
   try {
     const parsed = new URL(value);
     const hostname = parsed.hostname.replace(/^www\./, '');
-    const isSupabaseStorage = hostname.includes('supabase.co') && parsed.pathname.includes('/storage/v1/object/');
     return {
       url: value,
-      hostLabel: isSupabaseStorage ? 'Stored in FamilyOS Vault' : hostname,
-      isExternal: !isSupabaseStorage,
+      hostLabel: hostname,
+      isExternal: true,
     };
   } catch (_error) {
     return { url: value, hostLabel: value, isExternal: true };
@@ -89,6 +98,67 @@ function documentLinkText(url) {
   return value.length > 90 ? `${value.slice(0, 87)}...` : value;
 }
 
+function documentStorageObjectPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (!/^https?:\/\//i.test(raw)) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    if (!parsed.hostname.includes('supabase.co') || !parsed.pathname.includes('/storage/v1/object/')) {
+      return null;
+    }
+    const marker = '/documents/';
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex === -1) return null;
+    return decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function documentActionLink(documentRecord, label, extraStyle = '') {
+  if (!documentRecord?.file_url) {
+    return label;
+  }
+
+  const objectPath = documentStorageObjectPath(documentRecord.file_url);
+  if (objectPath) {
+    return `
+      <a
+        href="#"
+        onclick="openVaultDocument('${documentRecord.id}');return false;"
+        style="${extraStyle}"
+      >
+        ${label}
+      </a>`;
+  }
+
+  const externalUrl = safeExternalDocumentUrl(documentRecord.file_url);
+  if (!externalUrl) {
+    return label;
+  }
+
+  return `
+    <a
+      href="${externalUrl}"
+      target="_blank"
+      rel="noopener noreferrer"
+      style="${extraStyle}"
+    >
+      ${label}
+    </a>`;
+}
+
+function safeExternalDocumentUrl(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
 function documentAccessBadge(accessLevel) {
   if (accessLevel === 'admins') return '<span class="badge b-red">Admins only</span>';
   if (accessLevel === 'all') return '<span class="badge b-blue">All access</span>';
@@ -98,23 +168,48 @@ function documentAccessBadge(accessLevel) {
 async function uploadVaultFile(file) {
   if (!file) return { url: null, name: null, sizeKb: null };
 
-  const bucket = 'documents';
   const ext = (file.name.split('.').pop() || 'file').toLowerCase();
   const base = safeFileName(file.name.replace(/\.[^.]+$/, ''));
   const path = `${State.fid || 'family'}/${Date.now()}-${base}.${ext}`;
 
   const { error: uploadError } = await DB.client.storage
-    .from(bucket)
+    .from(VAULT_BUCKET)
     .upload(path, file, { cacheControl: '3600', upsert: false });
 
   if (uploadError) return { error: uploadError };
 
-  const { data } = DB.client.storage.from(bucket).getPublicUrl(path);
   return {
-    url: data?.publicUrl || null,
+    storagePath: path,
     name: file.name || null,
     sizeKb: Math.max(1, Math.round((file.size || 0) / 1024)),
   };
+}
+
+async function openVaultDocument(documentId) {
+  const documentRecord = VaultPage.docs.find((doc) => doc.id === documentId);
+  if (!documentRecord?.file_url) return;
+
+  const objectPath = documentStorageObjectPath(documentRecord.file_url);
+  if (!objectPath) {
+    const externalUrl = safeExternalDocumentUrl(documentRecord.file_url);
+    if (!externalUrl) {
+      alert('This document link is not valid.');
+      return;
+    }
+    window.open(externalUrl, '_blank', 'noopener');
+    return;
+  }
+
+  const { data, error } = await DB.client.storage
+    .from(VAULT_BUCKET)
+    .createSignedUrl(objectPath, 60);
+
+  if (error || !data?.signedUrl) {
+    alert(describeVaultStorageError(error || 'Unable to open this document right now.'));
+    return;
+  }
+
+  window.open(data.signedUrl, '_blank', 'noopener');
 }
 
 function vaultForm(document = null) {
@@ -230,19 +325,16 @@ async function renderVault() {
                     ${groupedDocs[category].map((doc) => `
                       <tr>
                         <td>
-                          ${doc.file_url ? `
-                            <a
-                              href="${doc.file_url}"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style="font-weight:700;color:var(--accent);text-decoration:none;"
-                            >
-                              ${documentIcon(doc.category)} ${escapeHtml(doc.title)}
-                            </a>
-                          ` : `<div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>`}
+                          ${doc.file_url
+                            ? documentActionLink(
+                              doc,
+                              `${documentIcon(doc.category)} ${escapeHtml(doc.title)}`,
+                              'font-weight:700;color:var(--accent);text-decoration:none;'
+                            )
+                            : `<div style="font-weight:600;">${documentIcon(doc.category)} ${escapeHtml(doc.title)}</div>`}
                           ${doc.file_name
                             ? (doc.file_url
-                              ? `<div style="font-size:11px;color:var(--text3);"><a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">${escapeHtml(doc.file_name)}</a>${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>`
+                              ? `<div style="font-size:11px;color:var(--text3);">${documentActionLink(doc, escapeHtml(doc.file_name), 'color:inherit;text-decoration:underline;')}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>`
                               : `<div style="font-size:11px;color:var(--text3);">${escapeHtml(doc.file_name)}${doc.file_size_kb ? ` · ${fmt(doc.file_size_kb)} KB` : ''}</div>`)
                             : ''}
                           ${doc.file_url ? (() => {
@@ -251,7 +343,7 @@ async function renderVault() {
                               <div style="font-size:11px;color:var(--text3);">${escapeHtml(meta?.hostLabel || doc.file_url)}</div>
                               ${meta?.isExternal ? `
                                 <div style="font-size:11px;word-break:break-all;">
-                                  <a href="${doc.file_url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">
+                                  <a href="${safeExternalDocumentUrl(doc.file_url) || '#'}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:underline;">
                                     ${escapeHtml(documentLinkText(doc.file_url))}
                                   </a>
                                 </div>` : ''}`;
@@ -322,7 +414,7 @@ async function saveDocument(documentId = null) {
       showErr('vault-err', describeVaultStorageError(upload.error));
       return;
     }
-    fileUrl = upload.url;
+    fileUrl = upload.storagePath;
     fileName = upload.name;
     fileSizeKb = upload.sizeKb;
   }

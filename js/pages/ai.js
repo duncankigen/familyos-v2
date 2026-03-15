@@ -16,6 +16,7 @@ function aiFunctionConfigured() {
 
 const AIPage = {
   insightsBusy: false,
+  notice: '',
 };
 
 function insightTypeColor(insightType) {
@@ -136,9 +137,24 @@ async function loadAIServiceResponse(payload) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `AI service error (${res.status})`);
+    const error = new Error(data?.error || data?.message || `AI service error (${res.status})`);
+    error.status = res.status;
+    error.retryAfterSeconds = Number(data?.retry_after_seconds || res.headers.get('Retry-After') || 0);
+    error.rateLimited = res.status === 429;
+    throw error;
   }
   return data;
+}
+
+function isAIRateLimitError(error) {
+  return Boolean(error?.rateLimited || error?.status === 429);
+}
+
+function aiCooldownMessage(error, subject = 'AI service') {
+  const seconds = Math.max(1, Number(error?.retryAfterSeconds || 0));
+  return seconds
+    ? `${subject} is cooling down. Try again in about ${seconds} second${seconds === 1 ? '' : 's'}.`
+    : `${subject} is cooling down. Please wait a moment before trying again.`;
 }
 
 function setAIInsightsBusy(isBusy) {
@@ -165,6 +181,13 @@ async function renderAI() {
   document.getElementById('page-content').innerHTML = `
     <div class="content">
       <div class="g2">
+
+        ${AIPage.notice ? `
+          <div class="ai-card ai-amber" style="grid-column:1 / -1;">
+            <div class="ai-tag" style="color:var(--warning);">AI Service Notice</div>
+            <div class="ai-msg">${escapeHtml(AIPage.notice)}</div>
+          </div>
+        ` : ''}
 
         <div>
           <div class="card-title mb12">Saved Insights</div>
@@ -234,6 +257,7 @@ async function askAI() {
   const responseEl = document.getElementById('ai-response');
   if (responseEl) responseEl.innerHTML = `<div class="loading-screen"><div class="spinner"></div>Thinking...</div>`;
   const context = await _buildContext();
+  let providerCooldownNote = '';
 
   if (aiFunctionConfigured()) {
     try {
@@ -252,6 +276,9 @@ async function askAI() {
       return;
     } catch (error) {
       console.error('[AI] Edge Function failed:', error);
+      if (isAIRateLimitError(error)) {
+        providerCooldownNote = aiCooldownMessage(error, 'AI advisor');
+      }
     }
   }
 
@@ -262,7 +289,7 @@ async function askAI() {
         <div class="ai-tag" style="color:var(--accent);">AI Response (Local)</div>
         <div class="ai-msg" style="white-space:pre-line;">${escapeHtml(answer)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:8px;">
-          Local analysis was used because the AI service is unavailable or not configured.
+          ${escapeHtml(providerCooldownNote || 'Local analysis was used because the AI service is unavailable or not configured.')}
         </div>
       </div>`;
   }
@@ -326,6 +353,7 @@ async function generateInsights() {
   const sb = DB.client;
   const fid = State.fid;
   setAIInsightsBusy(true);
+  AIPage.notice = '';
 
   try {
     const context = await _buildContext();
@@ -341,6 +369,9 @@ async function generateInsights() {
         drafts = normalizeInsightDrafts(data?.insights || []);
       } catch (error) {
         console.warn('[AI] Provider-backed insight generation failed, using local fallback:', error);
+        if (isAIRateLimitError(error)) {
+          AIPage.notice = `${aiCooldownMessage(error, 'AI insight generation')} Local insight fallback was used instead.`;
+        }
       }
     }
 
