@@ -53,7 +53,8 @@ const Auth = {
   },
 
   /** Handle sign-in or sign-up form submission. */
-  async handle() {
+  async handle(event) {
+    event?.preventDefault?.();
     if (this._isBusy) return;
 
     const email    = document.getElementById('auth-email').value.trim();

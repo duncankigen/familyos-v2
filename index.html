@@ -3,6 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob: https:;
+      connect-src 'self' https://cdn.jsdelivr.net https://oibaqxipzhfqosgzhfng.supabase.co https://generativelanguage.googleapis.com;
+      font-src 'self' data: https://cdn.jsdelivr.net;
+      object-src 'none';
+      base-uri 'self';
+      frame-ancestors 'self';
+      form-action 'self';
+      upgrade-insecure-requests;
+    "
+  />
   <title>FamilyOS — Digital Operating System for African Families</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
@@ -26,38 +42,40 @@
       <div class="setup-title" id="auth-title">Sign in to FamilyOS</div>
       <div class="setup-sub" id="auth-sub">Sign in to access your family workspace.</div>
 
-      <div id="auth-name-row" class="form-row" style="display:none;">
+      <form id="auth-form" onsubmit="Auth.handle(event)" novalidate>
+        <div id="auth-name-row" class="form-row" style="display:none;">
+          <div class="form-group">
+            <label class="form-label" for="auth-first-name">First Name</label>
+            <input id="auth-first-name" class="form-input" placeholder="Peter" autocomplete="given-name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-last-name">Last Name</label>
+            <input id="auth-last-name" class="form-input" placeholder="Otieno" autocomplete="family-name" />
+          </div>
+        </div>
+
         <div class="form-group">
-          <label class="form-label">First Name</label>
-          <input id="auth-first-name" class="form-input" placeholder="Peter" />
+          <label class="form-label" for="auth-email">Email</label>
+          <input id="auth-email" class="form-input" type="email" placeholder="peter@family.com" autocomplete="email username" />
         </div>
         <div class="form-group">
-          <label class="form-label">Last Name</label>
-          <input id="auth-last-name" class="form-input" placeholder="Otieno" />
+          <label class="form-label" for="auth-password">Password</label>
+          <input id="auth-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" />
         </div>
-      </div>
+        <div id="auth-password-confirm-group" class="form-group" style="display:none;">
+          <label class="form-label" for="auth-password-confirm">Confirm Password</label>
+          <input id="auth-password-confirm" class="form-input" type="password" placeholder="••••••••" autocomplete="new-password" />
+        </div>
 
-      <div class="form-group">
-        <label class="form-label">Email</label>
-        <input id="auth-email" class="form-input" type="email" placeholder="peter@family.com" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Password</label>
-        <input id="auth-password" class="form-input" type="password" placeholder="••••••••" />
-      </div>
-      <div id="auth-password-confirm-group" class="form-group" style="display:none;">
-        <label class="form-label">Confirm Password</label>
-        <input id="auth-password-confirm" class="form-input" type="password" placeholder="••••••••" />
-      </div>
-
-      <button id="auth-submit-btn" class="btn btn-primary btn-inline" style="width:100%;margin-bottom:10px;" onclick="Auth.handle()">
-        <span id="auth-btn-spinner" class="btn-spinner" style="display:none;" aria-hidden="true"></span>
-        <span id="auth-btn-text">Sign In</span>
-      </button>
-      <p id="auth-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none;"></p>
-      <p style="text-align:center;font-size:12px;color:var(--text3);">
-        <a href="#" id="auth-toggle" onclick="Auth.toggleMode(event)">Create an account</a>
-      </p>
+        <button id="auth-submit-btn" type="submit" class="btn btn-primary btn-inline" style="width:100%;margin-bottom:10px;">
+          <span id="auth-btn-spinner" class="btn-spinner" style="display:none;" aria-hidden="true"></span>
+          <span id="auth-btn-text">Sign In</span>
+        </button>
+        <p id="auth-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none;"></p>
+        <p style="text-align:center;font-size:12px;color:var(--text3);">
+          <a href="#" id="auth-toggle" onclick="Auth.toggleMode(event)">Create an account</a>
+        </p>
+      </form>
     </div>
   </div>
 
