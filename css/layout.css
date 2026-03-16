@@ -106,6 +106,79 @@ a { color: var(--accent); text-decoration: none; }
 .menu-btn     { display: none; background: none; border: none; cursor: pointer; color: var(--text); padding: 4px; }
 .page-title   { font-size: 15px; font-weight: 600; }
 .topbar-right { display: flex; align-items: center; gap: 8px; }
+.billing-actions-disabled .btn,
+.billing-actions-disabled .btn-primary,
+.billing-actions-disabled .btn-secondary,
+.billing-actions-disabled .btn-danger,
+.billing-actions-disabled .btn-icon,
+.billing-actions-disabled button {
+  pointer-events: none;
+  opacity: .55;
+}
+
+.workspace-banner {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+}
+.workspace-banner.is-trialing {
+  background: color-mix(in srgb, var(--accent-bg) 70%, var(--bg2));
+}
+.workspace-banner.is-restricted {
+  background: color-mix(in srgb, var(--danger-bg) 78%, var(--bg2));
+}
+.workspace-banner-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+.workspace-banner-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.workspace-banner-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.workspace-banner-text {
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.workspace-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.billing-readonly .btn,
+.billing-readonly .btn-primary,
+.billing-readonly .btn-secondary,
+.billing-readonly .btn-danger,
+.billing-readonly .btn-icon,
+.billing-readonly button,
+.billing-readonly input,
+.billing-readonly select,
+.billing-readonly textarea,
+.billing-readonly summary,
+.billing-readonly [role="switch"] {
+  pointer-events: none;
+  opacity: .55;
+}
+.billing-readonly-note {
+  margin: 0 20px 20px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--danger-bg) 72%, var(--bg2));
+  color: var(--text2);
+  font-size: 12px;
+}
 
 /* ── Page content ─────────────────────────────── */
 .content { padding: 20px; }
@@ -180,4 +253,7 @@ a { color: var(--accent); text-decoration: none; }
 
 @media (max-width: 600px) {
   .content { padding: 14px; }
+  .workspace-banner { padding: 12px 14px; }
+  .workspace-banner-card { align-items: start; flex-direction: column; }
+  .billing-readonly-note { margin: 0 14px 14px; }
 }

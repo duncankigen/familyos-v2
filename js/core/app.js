@@ -1211,6 +1211,234 @@ function clearAuthModeParam() {
   window.location.search = nextSearch ? `?${nextSearch}` : '';
 }
 
+const BILLING_READ_ONLY_PAGES = new Set(['dashboard', 'finance', 'members', 'reports', 'meetings', 'vault']);
+
+function billingDateLabel(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function billingDaysLeft(value) {
+  if (!value) return null;
+  const end = new Date(value);
+  if (Number.isNaN(end.getTime())) return null;
+  const diff = end.getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / 86400000));
+}
+
+function deriveBillingState(family = {}) {
+  const status = String(family.billing_status || 'active').trim().toLowerCase() || 'active';
+  const plan = String(family.billing_plan || 'monthly').trim().toLowerCase() || 'monthly';
+  const currency = String(family.billing_currency || 'KES').trim().toUpperCase() || 'KES';
+  const country = String(family.billing_country || 'KE').trim().toUpperCase() || 'KE';
+  const trialEndsAt = family.trial_ends_at || null;
+  const subscriptionEndsAt = family.subscription_ends_at || null;
+  const daysLeft = billingDaysLeft(status === 'trialing' ? trialEndsAt : subscriptionEndsAt);
+
+  let access = 'active';
+  if (status === 'trialing') {
+    access = daysLeft && daysLeft > 0 ? 'trialing' : 'restricted';
+  } else if (['expired', 'past_due', 'cancelled'].includes(status)) {
+    access = 'restricted';
+  } else if (status === 'active' && subscriptionEndsAt) {
+    access = (billingDaysLeft(subscriptionEndsAt) || 0) > 0 ? 'active' : 'restricted';
+  }
+
+  return {
+    status,
+    access,
+    plan,
+    currency,
+    country,
+    trialStartedAt: family.trial_started_at || null,
+    trialEndsAt,
+    subscriptionStartedAt: family.subscription_started_at || null,
+    subscriptionEndsAt,
+    daysLeft,
+  };
+}
+
+function billingPlanLabel(plan = 'monthly') {
+  return plan === 'yearly' ? 'Yearly' : 'Monthly';
+}
+
+function billingStatusLabel(status = 'active') {
+  const labels = {
+    active: 'Active',
+    trialing: 'Trial',
+    expired: 'Expired',
+    past_due: 'Past Due',
+    cancelled: 'Cancelled',
+  };
+  return labels[status] || 'Active';
+}
+
+function isBillingBypassed() {
+  return Boolean(State.isPlatformAdmin);
+}
+
+function isWorkspaceRestricted() {
+  return !isBillingBypassed() && State.billing?.access === 'restricted';
+}
+
+function isReadOnlyBillingPage(page) {
+  return BILLING_READ_ONLY_PAGES.has(page);
+}
+
+function resolveBillingPageAccess(page) {
+  if (!isWorkspaceRestricted()) {
+    return { page, readOnly: false, showPrompt: false };
+  }
+
+  if (isReadOnlyBillingPage(page)) {
+    return { page, readOnly: true, showPrompt: false };
+  }
+
+  return { page: 'dashboard', readOnly: true, showPrompt: true };
+}
+
+function applyBillingReadOnlyState(page, options = {}) {
+  const { beforeRender = false, readOnly = isWorkspaceRestricted() && isReadOnlyBillingPage(page) } = options;
+  const content = document.getElementById('page-content');
+  if (!content) return;
+
+  content.classList.toggle('billing-readonly', Boolean(readOnly));
+  if (beforeRender || !readOnly) return;
+
+  content.querySelectorAll('button, input, select, textarea, summary').forEach((el) => {
+    if (el.dataset.billingAllow === 'true') return;
+    if ('disabled' in el) el.disabled = true;
+    el.setAttribute('aria-disabled', 'true');
+    el.tabIndex = -1;
+  });
+
+  if (content.querySelector('.billing-readonly-note')) return;
+  const note = document.createElement('div');
+  note.className = 'billing-readonly-note';
+  note.textContent = 'This workspace is currently in read-only mode. Renew billing to keep adding or editing records.';
+  content.prepend(note);
+}
+
+function openBillingStatusModal() {
+  const billing = State.billing || deriveBillingState();
+  const planLabel = billingPlanLabel(billing.plan);
+  const statusLabel = billingStatusLabel(billing.status);
+  const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
+  const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
+  const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
+  const summaryLine = billing.access === 'trialing'
+    ? `Your workspace is on a 7-day trial${trialEndsLabel ? ` through ${trialEndsLabel}` : ''}.`
+    : billing.access === 'restricted'
+      ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
+      : 'Your workspace billing is active.';
+
+  Modal.open('Workspace Billing', `
+    <div class="account-center-content">
+      <div class="account-center-hero ai-amber">
+        <div class="account-center-hero-title">${statusLabel} Workspace</div>
+        <div class="account-center-hero-copy">${summaryLine}</div>
+      </div>
+      <div class="account-center-grid">
+        <div class="card">
+          <div class="card-title">Current Billing</div>
+          <div class="details-grid">
+            <div><div class="details-label">Plan</div><div class="details-value">${escapeHtml(planLabel)}</div></div>
+            <div><div class="details-label">Billing Currency</div><div class="details-value">${escapeHtml(billing.currency)}</div></div>
+            <div><div class="details-label">Current Price</div><div class="details-value">${amountLabel}</div></div>
+            <div><div class="details-label">Status</div><div class="details-value">${escapeHtml(statusLabel)}</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">What Happens Next</div>
+          <div class="account-center-list">
+            <div>Monthly billing will be KES 100. Yearly billing will be KES 1,000.</div>
+            <div>New workspaces start with a 7-day free trial.</div>
+            <div>Paystack checkout will be connected next, after this access model is confirmed.</div>
+            <div>Expired workspaces keep a read-only view of core pages while billing is resolved.</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Dates</div>
+        <div class="details-grid">
+          <div><div class="details-label">Trial Ends</div><div class="details-value">${escapeHtml(trialEndsLabel || 'Not set')}</div></div>
+          <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || 'Not set')}</div></div>
+        </div>
+      </div>
+    </div>
+  `, [
+    { label: 'Close', cls: 'btn', fn: () => Modal.close() },
+  ]);
+}
+
+function renderWorkspaceBanner() {
+  const banner = document.getElementById('workspace-banner');
+  if (!banner) return;
+
+  if (!State.currentFamilyId || isBillingBypassed()) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    banner.className = 'workspace-banner';
+    return;
+  }
+
+  const billing = State.billing || deriveBillingState();
+  if (billing.access === 'active') {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    banner.className = 'workspace-banner';
+    return;
+  }
+
+  const isTrialing = billing.access === 'trialing';
+  const dateLabel = billingDateLabel(isTrialing ? billing.trialEndsAt : billing.subscriptionEndsAt);
+  const title = isTrialing
+    ? `${billing.daysLeft || 0} day${billing.daysLeft === 1 ? '' : 's'} left in your free trial`
+    : 'Workspace is now in read-only mode';
+  const text = isTrialing
+    ? `Your ${billingPlanLabel(billing.plan).toLowerCase()} workspace trial${dateLabel ? ` ends on ${dateLabel}` : ''}. Billing will use ${billing.currency} when checkout is connected.`
+    : 'You can still review selected pages, but new records and edits are blocked until billing is reactivated.';
+
+  banner.className = `workspace-banner ${isTrialing ? 'is-trialing' : 'is-restricted'}`;
+  banner.innerHTML = `
+    <div class="workspace-banner-card">
+      <div class="workspace-banner-copy">
+        <div class="workspace-banner-title">${escapeHtml(title)}</div>
+        <div class="workspace-banner-text">${escapeHtml(text)}</div>
+      </div>
+      <div class="workspace-banner-actions">
+        <button class="btn btn-secondary" data-billing-allow="true" onclick="openBillingStatusModal()">Review Billing</button>
+      </div>
+    </div>`;
+  banner.style.display = 'block';
+}
+
+async function fetchFamilyWorkspaceSnapshot(familyId) {
+  const billingFields = 'name,billing_status,billing_plan,billing_currency,billing_country,trial_started_at,trial_ends_at,subscription_started_at,subscription_ends_at';
+  let { data, error } = await DB.client
+    .from('families')
+    .select(billingFields)
+    .eq('id', familyId)
+    .single();
+
+  if (error && /billing_/i.test(error.message || '')) {
+    ({ data, error } = await DB.client
+      .from('families')
+      .select('name')
+      .eq('id', familyId)
+      .single());
+  }
+
+  if (error) {
+    console.warn('[App] Failed to load family billing snapshot:', error);
+    return null;
+  }
+
+  return data || null;
+}
+
 async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
@@ -1225,15 +1453,15 @@ async function hydrateFamily(profile, user) {
   clearAuthModeParam();
 
   if (!State.currentFamilyId) {
+    State.billing = deriveBillingState();
+    renderWorkspaceBanner();
     showFamilySetup();
     return;
   }
 
-  const { data: family } = await DB.client
-    .from('families')
-    .select('name')
-    .eq('id', State.currentFamilyId)
-    .single();
+  const family = await fetchFamilyWorkspaceSnapshot(State.currentFamilyId);
+  State.billing = deriveBillingState(family || {});
+  renderWorkspaceBanner();
 
   if (family?.name) {
     document.getElementById('sb-family-name').textContent = family.name;
@@ -1243,6 +1471,10 @@ async function hydrateFamily(profile, user) {
   Modal.close();
   show('app');
   Router.go(Router.restore());
+  if (State.billing.access === 'restricted' && !State.billingPromptShown) {
+    State.billingPromptShown = true;
+    window.setTimeout(() => openBillingStatusModal(), 180);
+  }
 }
 
 async function loadUserProfile(user) {
@@ -1284,6 +1516,8 @@ function resetSessionState() {
   State.currentUser = null;
   State.currentProfile = null;
   State.currentFamilyId = null;
+  State.billing = deriveBillingState();
+  State.billingPromptShown = false;
   State.isPlatformAdmin = false;
   State.adminSnapshot = { tickets: [], families: [], users: [] };
   State.unreadAnnouncements = 0;

@@ -75,13 +75,17 @@ const Router = {
   async go(page, options = {}) {
     const { remember = true } = options;
     const resolvedPage = this.resolve(page);
+    const gate = typeof resolveBillingPageAccess === 'function'
+      ? resolveBillingPageAccess(resolvedPage)
+      : { page: resolvedPage, readOnly: false, showPrompt: false };
+    const finalPage = this.resolve(gate.page);
 
-    State.currentPage = resolvedPage;
-    if (remember) this.remember(resolvedPage);
+    State.currentPage = finalPage;
+    if (remember) this.remember(finalPage);
 
     // Update sidebar active state
     document.querySelectorAll('.sb-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.page === resolvedPage);
+      el.classList.toggle('active', el.dataset.page === finalPage);
     });
 
     // Close mobile sidebar
@@ -89,13 +93,24 @@ const Router = {
 
     // Render
     const content = document.getElementById('page-content');
+    if (typeof applyBillingReadOnlyState === 'function') {
+      applyBillingReadOnlyState(finalPage, { beforeRender: true, readOnly: gate.readOnly });
+    }
     content.innerHTML = loading();
 
-    const renderer = this._routes[resolvedPage];
+    const renderer = this._routes[finalPage];
     if (renderer) {
       await renderer();
     } else {
-      content.innerHTML = `<div class="content"><div class="card">Page <strong>${resolvedPage}</strong> not found.</div></div>`;
+      content.innerHTML = `<div class="content"><div class="card">Page <strong>${finalPage}</strong> not found.</div></div>`;
+    }
+
+    if (typeof applyBillingReadOnlyState === 'function') {
+      applyBillingReadOnlyState(finalPage, { readOnly: gate.readOnly });
+    }
+
+    if (gate.showPrompt && typeof openBillingStatusModal === 'function') {
+      window.setTimeout(() => openBillingStatusModal(), 0);
     }
 
     if (typeof Sidebar?.refreshSectionIndicators === 'function') {
@@ -121,7 +136,10 @@ function setTopbar(title, actionsHtml = '') {
     ? Notifications.buttonHtml()
     : '';
   document.getElementById('page-title').textContent       = title;
-  document.getElementById('topbar-actions').innerHTML     = `${actionsHtml || ''}${notificationHtml}`;
+  const actionClass = typeof isWorkspaceRestricted === 'function' && isWorkspaceRestricted()
+    ? 'billing-actions-disabled'
+    : '';
+  document.getElementById('topbar-actions').innerHTML     = `<div class="${actionClass}">${actionsHtml || ''}</div>${notificationHtml}`;
 }
 
 /**

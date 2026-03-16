@@ -24,8 +24,39 @@ create table if not exists families (
   name text not null,
   description text,
   motto text,
+  billing_status text not null default 'active',
+  billing_plan text not null default 'monthly',
+  billing_currency text not null default 'KES',
+  billing_country text not null default 'KE',
+  trial_started_at timestamptz,
+  trial_ends_at timestamptz,
+  subscription_started_at timestamptz,
+  subscription_ends_at timestamptz,
   created_at timestamptz default now()
 );
+
+alter table public.families add column if not exists billing_status text not null default 'active';
+alter table public.families add column if not exists billing_plan text not null default 'monthly';
+alter table public.families add column if not exists billing_currency text not null default 'KES';
+alter table public.families add column if not exists billing_country text not null default 'KE';
+alter table public.families add column if not exists trial_started_at timestamptz;
+alter table public.families add column if not exists trial_ends_at timestamptz;
+alter table public.families add column if not exists subscription_started_at timestamptz;
+alter table public.families add column if not exists subscription_ends_at timestamptz;
+
+update public.families
+set billing_status = coalesce(nullif(billing_status, ''), 'active'),
+    billing_plan = coalesce(nullif(billing_plan, ''), 'monthly'),
+    billing_currency = coalesce(nullif(billing_currency, ''), 'KES'),
+    billing_country = coalesce(nullif(billing_country, ''), 'KE')
+where billing_status is null
+   or billing_status = ''
+   or billing_plan is null
+   or billing_plan = ''
+   or billing_currency is null
+   or billing_currency = ''
+   or billing_country is null
+   or billing_country = '';
 
 -- Users / Profiles (linked to Supabase Auth)
 create table if not exists users (
@@ -948,8 +979,26 @@ begin
     return v_existing_family_id;
   end if;
 
-  insert into public.families (name, description)
-  values (trim(p_name), nullif(trim(coalesce(p_description, '')), ''))
+  insert into public.families (
+    name,
+    description,
+    billing_status,
+    billing_plan,
+    billing_currency,
+    billing_country,
+    trial_started_at,
+    trial_ends_at
+  )
+  values (
+    trim(p_name),
+    nullif(trim(coalesce(p_description, '')), ''),
+    'trialing',
+    'monthly',
+    'KES',
+    'KE',
+    now(),
+    now() + interval '7 days'
+  )
   returning id into v_family_id;
 
   update public.users

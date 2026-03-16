@@ -10,6 +10,17 @@ const State = {
   currentUser:     null,   // auth.users row
   currentProfile:  null,   // public.users row
   currentFamilyId: null,   // UUID of the active family
+  billing: {
+    status: 'active',
+    access: 'active',
+    plan: 'monthly',
+    currency: 'KES',
+    country: 'KE',
+    trialEndsAt: null,
+    subscriptionEndsAt: null,
+    daysLeft: null,
+  },
+  billingPromptShown: false,
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
   unreadAnnouncements: 0,
