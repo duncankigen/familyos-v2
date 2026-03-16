@@ -379,7 +379,7 @@ async function renderFarming() {
       <div class="g4 mb16">
         <div class="metric-card"><div class="metric-label">Output Records</div>
           <div class="metric-value">${farmOutputs.length}</div></div>
-        <div class="metric-card"><div class="metric-label">This Month</div>
+        <div class="metric-card"><div class="metric-label">Outputs This Month</div>
           <div class="metric-value" style="color:var(--accent);">${thisMonthOutputs.length}</div></div>
         <div class="metric-card"><div class="metric-label">Sold Records</div>
           <div class="metric-value">${farmSummary.soldCount}</div></div>
@@ -490,7 +490,7 @@ async function renderFarming() {
 
       <div class="g2 mb16">
         <div class="card">
-          <div class="card-title">Recent Activities</div>
+          <div class="card-title">Recent Farm Activities</div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Activity</th><th>Farm</th><th>By</th><th>Date</th><th>Cost</th></tr></thead>
