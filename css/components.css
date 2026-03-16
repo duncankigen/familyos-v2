@@ -819,8 +819,8 @@ tbody tr:hover td        { background: var(--bg3); }
 .finance-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
   margin-bottom: 12px;
 }
 .finance-info {
@@ -852,7 +852,7 @@ tbody tr:hover td        { background: var(--bg3); }
 .finance-info-pop {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   width: min(280px, calc(100vw - 48px));
   padding: 10px 12px;
   border-radius: 12px;
