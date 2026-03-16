@@ -860,6 +860,11 @@ function openEditProject(projectId) {
   if (!project) return;
 
   Modal.open('Manage Project', projectForm(project), [
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: async () => confirmDeleteProject(projectId),
+    },
     project.status !== 'cancelled' ? {
       label: 'Archive',
       cls: 'btn',
@@ -871,6 +876,56 @@ function openEditProject(projectId) {
       fn: async () => saveProject(projectId),
     },
   ].filter(Boolean));
+}
+
+async function confirmDeleteProject(projectId) {
+  if (!canManageProjects()) return;
+
+  const project = ProjectsPage.projects.find((item) => item.id === projectId);
+  if (!project) return;
+
+  const { count, error } = await DB.client
+    .from('expenses')
+    .select('id', { count: 'exact', head: true })
+    .eq('family_id', State.fid)
+    .eq('project_id', projectId);
+
+  const linkedExpenseCount = error ? 0 : (count || 0);
+  const warning = linkedExpenseCount
+    ? `Deleting this project will remove its team, tasks, activities, and farm records. ${linkedExpenseCount} linked expense record(s) will stay in the finance ledger but will no longer be attached to this project.`
+    : 'Deleting this project will permanently remove its team, tasks, activities, and farm records. This action cannot be undone.';
+
+  Modal.open('Delete Project', `
+    <div style="font-size:14px;line-height:1.55;color:var(--text);">
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(project.name || 'Project')}</div>
+      <div style="color:var(--text2);">${escapeHtml(warning)}</div>
+    </div>
+    <p id="project-delete-err" style="color:var(--danger);font-size:12px;display:none;margin-top:10px;"></p>
+  `, [
+    { label: 'Cancel', cls: 'btn-ghost', fn: () => Modal.close() },
+    {
+      label: 'Delete Project',
+      cls: 'btn-danger',
+      fn: async () => deleteProject(projectId),
+    },
+  ]);
+}
+
+async function deleteProject(projectId) {
+  const { error } = await DB.client
+    .from('projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('family_id', State.fid);
+
+  if (error) {
+    showErr('project-delete-err', error.message);
+    return;
+  }
+
+  rememberActiveProject('');
+  Modal.close();
+  renderPage('projects');
 }
 
 async function archiveProject(projectId) {
