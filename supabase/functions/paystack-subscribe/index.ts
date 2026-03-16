@@ -16,6 +16,10 @@ function checkoutReference(familyId: string) {
   return `fos_${compact}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
+function checkoutAmount(plan: string) {
+  return plan === "yearly" ? "100000" : "10000";
+}
+
 Deno.serve(async (req) => {
   const { configured, origin } = getAllowedOrigin(req);
 
@@ -46,8 +50,8 @@ Deno.serve(async (req) => {
       method: "POST",
       body: JSON.stringify({
         email,
+        amount: checkoutAmount(plan),
         plan: planCode,
-        currency: context.family.billing_currency || "KES",
         reference,
         callback_url: buildSuccessUrl(configured),
         channels: ["card"],
