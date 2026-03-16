@@ -15,6 +15,26 @@ function toggleTheme() {
   initTheme();
 }
 
+function toggleAccountCenterTheme(section = 'settings') {
+  toggleTheme();
+  openProfileCenter(section);
+}
+
+function accountThemeSwitch(section = 'settings') {
+  return `
+    <button
+      type="button"
+      class="theme-switch ${State.isDark ? 'is-dark' : 'is-light'}"
+      role="switch"
+      aria-checked="${State.isDark ? 'true' : 'false'}"
+      aria-label="Theme preference. ${State.isDark ? 'Dark mode is active.' : 'Light mode is active.'}"
+      onclick="toggleAccountCenterTheme('${section}')">
+      <span class="theme-switch-label theme-switch-label-light">Light</span>
+      <span class="theme-switch-label theme-switch-label-dark">Dark</span>
+      <span class="theme-switch-thumb" aria-hidden="true"></span>
+    </button>`;
+}
+
 function show(id) {
   ['auth-screen', 'app'].forEach((screenId) => {
     const el = document.getElementById(screenId);
@@ -379,8 +399,8 @@ function profileCenterSection(section) {
         </div>
       </div>
       <div class="profile-center-actions">
-        <button class="btn btn-sm" onclick="toggleTheme()">Toggle Theme</button>
-        <button class="btn btn-sm" onclick="Auth.signOut()">Sign Out</button>
+        ${accountThemeSwitch('profile')}
+        <button class="btn btn-sm btn-danger" onclick="Auth.signOut()">Sign Out</button>
       </div>
       <div class="profile-center-meta">${updatedLabel}</div>
     </div>`;
@@ -844,7 +864,7 @@ function accountCenterSection(section) {
             <div class="card-title">Appearance</div>
             <div class="account-center-copy">Theme preference is stored in this browser so the interface feels familiar each time you sign in.</div>
             <div class="account-center-actions" style="margin-top:12px;">
-              <button class="btn btn-sm" onclick="toggleTheme()">Toggle Theme</button>
+              ${accountThemeSwitch('settings')}
             </div>
           </div>
           <div class="card">
@@ -854,14 +874,8 @@ function accountCenterSection(section) {
               <div>Workspace: ${escapeHtml(familyName)}</div>
               <div>Role: ${role}</div>
             </div>
-          </div>
-          <div class="card">
-            <div class="card-title">Planned settings</div>
-            <div class="account-center-list">
-              <div>Notification preferences</div>
-              <div>Default landing page</div>
-              <div>Report and export preferences</div>
-              <div>Support routing preferences</div>
+            <div class="account-center-actions" style="margin-top:12px;">
+              <button class="btn btn-sm btn-danger" onclick="Auth.signOut()">Sign Out</button>
             </div>
           </div>
         </div>
@@ -1048,8 +1062,8 @@ function accountCenterSection(section) {
         <div class="card"><div class="card-title">Recommended next stops</div><div class="account-center-list"><div>Open <strong>Help Center</strong> when you need usage guidance.</div><div>Open <strong>User Guide</strong> for detailed workflows.</div><div>Open <strong>Contact Support</strong> if the issue goes beyond normal family admin help.</div></div></div>
       </div>
       <div class="account-center-actions">
-        <button class="btn btn-sm" onclick="toggleTheme()">Toggle Theme</button>
-        <button class="btn btn-sm" onclick="Auth.signOut()">Sign Out</button>
+        ${accountThemeSwitch('profile')}
+        <button class="btn btn-sm btn-danger" onclick="Auth.signOut()">Sign Out</button>
       </div>
       <div class="account-center-meta">${updatedLabel}</div>
     </div>`;

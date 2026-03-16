@@ -488,6 +488,58 @@ tbody tr:hover td        { background: var(--bg3); }
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.theme-switch {
+  position: relative;
+  width: 168px;
+  height: 36px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  background: var(--bg3);
+  color: var(--text2);
+  padding: 3px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.theme-switch-label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .18s ease;
+}
+.theme-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  transition: transform .18s ease;
+}
+.theme-switch.is-dark .theme-switch-thumb {
+  transform: translateX(100%);
+}
+.theme-switch.is-light .theme-switch-label-light,
+.theme-switch.is-dark .theme-switch-label-dark {
+  color: var(--text);
+}
+.theme-switch.is-light .theme-switch-label-dark,
+.theme-switch.is-dark .theme-switch-label-light {
+  color: var(--text3);
+}
+.theme-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .account-center-meta {
   font-size: 11px;
   color: var(--text3);
@@ -532,6 +584,10 @@ tbody tr:hover td        { background: var(--bg3); }
     border-bottom: 1px solid var(--border);
     padding-right: 0;
     padding-bottom: 10px;
+  }
+  .theme-switch {
+    width: 100%;
+    max-width: 220px;
   }
 }
 
