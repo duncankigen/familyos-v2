@@ -954,7 +954,7 @@ function accountCenterSection(section) {
       <div class="account-center-content">
         <div class="account-center-hero ai-amber">
           <div class="account-center-hero-title">Contact Support</div>
-          <div class="account-center-hero-copy">Use this section when you need to report a system issue, complaint, account problem, data inconsistency, or feature request to the platform owner. The DB-backed support workflow will be wired to a superadmin inbox in the next backend phase.</div>
+          <div class="account-center-hero-copy">Use this section when you need to report a system issue, complaint, account problem, data inconsistency, or feature request to the platform owner.</div>
         </div>
         <div class="account-center-grid">
           <div class="card"><div class="card-title">What to include</div><div class="account-center-list"><div>What you were trying to do</div><div>Which page or section was involved</div><div>What happened instead</div><div>Whether the issue blocks your work fully or partially</div><div>Any family, project, or record context needed to reproduce the problem</div></div></div>
