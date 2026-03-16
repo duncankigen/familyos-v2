@@ -283,7 +283,7 @@ function openAddDisbursement() {
   Modal.open('Record Disbursement', emergencyDisbursementForm(), [{
     label: 'Save',
     cls: 'btn-primary',
-    fn: saveEmergencyDisbursement,
+    fn: () => saveEmergencyDisbursement(),
   }]);
 }
 
