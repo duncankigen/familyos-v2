@@ -9,6 +9,13 @@ const Auth = {
   _isSignUp: false,
   _isBusy: false,
 
+  initFromLocation() {
+    const params = new URLSearchParams(window.location.search);
+    const mode = (params.get('mode') || '').trim().toLowerCase();
+    this._isSignUp = ['signup', 'register', 'trial'].includes(mode);
+    this.syncUi();
+  },
+
   buildFullName(firstName, lastName) {
     return [firstName, lastName].filter(Boolean).join(' ').trim();
   },

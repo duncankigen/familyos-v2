@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' data: blob: https:;
+      connect-src 'self' https://cdn.jsdelivr.net https://oibaqxipzhfqosgzhfng.supabase.co https://generativelanguage.googleapis.com;
+      font-src 'self' data: https://cdn.jsdelivr.net;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      upgrade-insecure-requests;
+    "
+  />
+  <title>FamilyOS — Digital Operating System for African Families</title>
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+
+  <!-- External CDNs -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="../css/variables.css" />
+  <link rel="stylesheet" href="../css/layout.css" />
+  <link rel="stylesheet" href="../css/components.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       AUTH SCREEN
+  ════════════════════════════════════════════════ -->
+  <div id="auth-screen" class="setup" style="display:none;">
+    <div class="setup-card">
+      <div class="setup-logo">F</div>
+      <div class="setup-title" id="auth-title">Sign in to FamilyOS</div>
+      <div class="setup-sub" id="auth-sub">Sign in to access your family workspace.</div>
+
+      <form id="auth-form" onsubmit="Auth.handle(event)" novalidate>
+        <div id="auth-name-row" class="form-row" style="display:none;">
+          <div class="form-group">
+            <label class="form-label" for="auth-first-name">First Name</label>
+            <input id="auth-first-name" class="form-input" placeholder="Peter" autocomplete="given-name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="auth-last-name">Last Name</label>
+            <input id="auth-last-name" class="form-input" placeholder="Otieno" autocomplete="family-name" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="auth-email">Email</label>
+          <input id="auth-email" class="form-input" type="email" placeholder="peter@family.com" autocomplete="email username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="auth-password">Password</label>
+          <input id="auth-password" class="form-input" type="password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <div id="auth-password-confirm-group" class="form-group" style="display:none;">
+          <label class="form-label" for="auth-password-confirm">Confirm Password</label>
+          <input id="auth-password-confirm" class="form-input" type="password" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+
+        <button id="auth-submit-btn" type="submit" class="btn btn-primary btn-inline" style="width:100%;margin-bottom:10px;">
+          <span id="auth-btn-spinner" class="btn-spinner" style="display:none;" aria-hidden="true"></span>
+          <span id="auth-btn-text">Sign In</span>
+        </button>
+        <p id="auth-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none;"></p>
+        <p style="text-align:center;font-size:12px;color:var(--text3);">
+          <a href="#" id="auth-toggle" onclick="Auth.toggleMode(event)">Create an account</a>
+        </p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN APP SHELL
+  ════════════════════════════════════════════════ -->
+  <div id="app" class="app" style="display:none;">
+    <div class="sidebar-overlay" id="sb-overlay" onclick="Sidebar.close()"></div>
+
+    <!-- Sidebar injected by js/components/Sidebar.js -->
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="main-wrap">
+      <div class="topbar">
+        <div class="topbar-left">
+          <button class="menu-btn" onclick="Sidebar.toggle()">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            </svg>
+          </button>
+          <div class="page-title" id="page-title">Dashboard</div>
+        </div>
+        <div class="topbar-right" id="topbar-actions"></div>
+      </div>
+      <div id="page-content"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       GLOBAL MODAL
+  ════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="modal" onclick="if(event.target===this)Modal.close()">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title">Dialog</div>
+        <button class="btn-icon" onclick="Modal.close()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 2l12 12M14 2L2 14"/>
+          </svg>
+        </button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-footer" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       JAVASCRIPT — load order matters
+  ════════════════════════════════════════════════ -->
+
+  <!-- 1. Core: state, helpers, supabase client -->
+  <script defer src="../js/config.js"></script>
+  <script defer src="../js/core/state.js"></script>
+  <script defer src="../js/core/helpers.js"></script>
+  <script defer src="../js/core/supabase.js"></script>
+  <script defer src="../js/core/finance.js"></script>
+  <script defer src="../js/core/router.js"></script>
+
+  <!-- 2. Shared UI components -->
+  <script defer src="../js/components/Modal.js"></script>
+  <script defer src="../js/components/Sidebar.js"></script>
+  <script defer src="../js/components/Notifications.js"></script>
+  <script defer src="../js/components/Auth.js"></script>
+
+  <!-- 3. Feature pages -->
+  <script defer src="../js/pages/dashboard.js"></script>
+  <script defer src="../js/pages/members.js"></script>
+  <script defer src="../js/pages/announcements.js"></script>
+  <script defer src="../js/pages/finance.js"></script>
+  <script defer src="../js/pages/contributions.js"></script>
+  <script defer src="../js/pages/expenses.js"></script>
+  <script defer src="../js/pages/schoolfees.js"></script>
+  <script defer src="../js/pages/emergency.js"></script>
+  <script defer src="../js/pages/projects.js"></script>
+  <script defer src="../js/pages/farming.js"></script>
+  <script defer src="../js/pages/tasks.js"></script>
+  <script defer src="../js/pages/assets.js"></script>
+  <script defer src="../js/pages/directory.js"></script>
+  <script defer src="../js/pages/meetings.js"></script>
+  <script defer src="../js/pages/goals.js"></script>
+  <script defer src="../js/pages/vault.js"></script>
+  <script defer src="../js/pages/reports.js"></script>
+  <script defer src="../js/pages/ai.js"></script>
+  <script defer src="../js/pages/admin.js"></script>
+
+  <!-- 4. App bootstrap -->
+  <script defer src="../js/core/app.js"></script>
+
+</body>
+</html>

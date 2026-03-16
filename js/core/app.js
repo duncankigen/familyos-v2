@@ -1317,6 +1317,7 @@ async function init() {
   try {
     initTheme();
     Sidebar.render();
+    Auth.initFromLocation();
 
     if (!DB.init()) {
       show('auth-screen');
