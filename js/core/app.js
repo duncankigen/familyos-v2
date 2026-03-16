@@ -1235,9 +1235,20 @@ function deriveBillingState(family = {}) {
   const country = String(family.billing_country || 'KE').trim().toUpperCase() || 'KE';
   const trialEndsAt = family.trial_ends_at || null;
   const subscriptionEndsAt = family.subscription_ends_at || null;
+  const scholarshipActive = Boolean(family.scholarship_active);
+  const scholarshipStartsAt = family.scholarship_started_at || null;
+  const scholarshipEndsAt = family.scholarship_ends_at || null;
+  const scholarshipNote = family.scholarship_note || null;
   const daysLeft = billingDaysLeft(status === 'trialing' ? trialEndsAt : subscriptionEndsAt);
+  const scholarshipStartMs = scholarshipStartsAt ? new Date(scholarshipStartsAt).getTime() : null;
+  const scholarshipEndMs = scholarshipEndsAt ? new Date(scholarshipEndsAt).getTime() : null;
+  const now = Date.now();
+  const scholarshipWindowOpen = scholarshipActive
+    && (scholarshipStartMs === null || scholarshipStartMs <= now)
+    && (scholarshipEndMs === null || scholarshipEndMs >= now);
 
   let access = 'active';
+  let accessSource = 'billing';
   if (status === 'trialing') {
     access = daysLeft && daysLeft > 0 ? 'trialing' : 'restricted';
   } else if (['expired', 'past_due', 'cancelled'].includes(status)) {
@@ -1246,9 +1257,15 @@ function deriveBillingState(family = {}) {
     access = (billingDaysLeft(subscriptionEndsAt) || 0) > 0 ? 'active' : 'restricted';
   }
 
+  if (scholarshipWindowOpen) {
+    access = 'active';
+    accessSource = 'scholarship';
+  }
+
   return {
     status,
     access,
+    accessSource,
     plan,
     currency,
     country,
@@ -1256,6 +1273,10 @@ function deriveBillingState(family = {}) {
     trialEndsAt,
     subscriptionStartedAt: family.subscription_started_at || null,
     subscriptionEndsAt,
+    scholarshipActive,
+    scholarshipStartsAt,
+    scholarshipEndsAt,
+    scholarshipNote,
     daysLeft,
   };
 }
@@ -1328,11 +1349,14 @@ function openBillingStatusModal() {
   const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
   const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
   const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
-  const summaryLine = billing.access === 'trialing'
-    ? `Your workspace is on a 7-day trial${trialEndsLabel ? ` through ${trialEndsLabel}` : ''}.`
-    : billing.access === 'restricted'
-      ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
-      : 'Your workspace billing is active.';
+  const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
+  const summaryLine = billing.accessSource === 'scholarship'
+    ? `This workspace is active through a scholarship${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
+    : billing.access === 'trialing'
+      ? `Your workspace is on a 7-day trial${trialEndsLabel ? ` through ${trialEndsLabel}` : ''}.`
+      : billing.access === 'restricted'
+        ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
+        : 'Your workspace billing is active.';
 
   Modal.open('Workspace Billing', `
     <div class="account-center-content">
@@ -1360,6 +1384,16 @@ function openBillingStatusModal() {
           </div>
         </div>
       </div>
+      ${billing.accessSource === 'scholarship' ? `
+        <div class="card">
+          <div class="card-title">Scholarship Override</div>
+          <div class="details-grid">
+            <div><div class="details-label">Access Source</div><div class="details-value">Scholarship</div></div>
+            <div><div class="details-label">Scholarship Ends</div><div class="details-value">${escapeHtml(scholarshipEndsLabel || 'Open-ended')}</div></div>
+          </div>
+          ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:10px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
+        </div>
+      ` : ''}
       <div class="card">
         <div class="card-title">Dates</div>
         <div class="details-grid">
@@ -1393,15 +1427,21 @@ function renderWorkspaceBanner() {
   }
 
   const isTrialing = billing.access === 'trialing';
+  const isScholarship = billing.accessSource === 'scholarship';
   const dateLabel = billingDateLabel(isTrialing ? billing.trialEndsAt : billing.subscriptionEndsAt);
-  const title = isTrialing
+  const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
+  const title = isScholarship
+    ? 'Workspace access is currently covered by scholarship'
+    : isTrialing
     ? `${billing.daysLeft || 0} day${billing.daysLeft === 1 ? '' : 's'} left in your free trial`
     : 'Workspace is now in read-only mode';
-  const text = isTrialing
+  const text = isScholarship
+    ? `This family has sponsored access${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
+    : isTrialing
     ? `Your ${billingPlanLabel(billing.plan).toLowerCase()} workspace trial${dateLabel ? ` ends on ${dateLabel}` : ''}. Billing will use ${billing.currency} when checkout is connected.`
     : 'You can still review selected pages, but new records and edits are blocked until billing is reactivated.';
 
-  banner.className = `workspace-banner ${isTrialing ? 'is-trialing' : 'is-restricted'}`;
+  banner.className = `workspace-banner ${isScholarship || isTrialing ? 'is-trialing' : 'is-restricted'}`;
   banner.innerHTML = `
     <div class="workspace-banner-card">
       <div class="workspace-banner-copy">
@@ -1416,14 +1456,14 @@ function renderWorkspaceBanner() {
 }
 
 async function fetchFamilyWorkspaceSnapshot(familyId) {
-  const billingFields = 'name,billing_status,billing_plan,billing_currency,billing_country,trial_started_at,trial_ends_at,subscription_started_at,subscription_ends_at';
+  const billingFields = 'name,billing_status,billing_plan,billing_currency,billing_country,trial_started_at,trial_ends_at,subscription_started_at,subscription_ends_at,scholarship_active,scholarship_started_at,scholarship_ends_at,scholarship_note';
   let { data, error } = await DB.client
     .from('families')
     .select(billingFields)
     .eq('id', familyId)
     .single();
 
-  if (error && /billing_/i.test(error.message || '')) {
+  if (error && /(billing_|scholarship_)/i.test(error.message || '')) {
     ({ data, error } = await DB.client
       .from('families')
       .select('name')

@@ -32,6 +32,11 @@ create table if not exists families (
   trial_ends_at timestamptz,
   subscription_started_at timestamptz,
   subscription_ends_at timestamptz,
+  scholarship_active boolean not null default false,
+  scholarship_started_at timestamptz,
+  scholarship_ends_at timestamptz,
+  scholarship_note text,
+  scholarship_granted_by uuid,
   created_at timestamptz default now()
 );
 
@@ -43,6 +48,11 @@ alter table public.families add column if not exists trial_started_at timestampt
 alter table public.families add column if not exists trial_ends_at timestamptz;
 alter table public.families add column if not exists subscription_started_at timestamptz;
 alter table public.families add column if not exists subscription_ends_at timestamptz;
+alter table public.families add column if not exists scholarship_active boolean not null default false;
+alter table public.families add column if not exists scholarship_started_at timestamptz;
+alter table public.families add column if not exists scholarship_ends_at timestamptz;
+alter table public.families add column if not exists scholarship_note text;
+alter table public.families add column if not exists scholarship_granted_by uuid;
 
 update public.families
 set billing_status = coalesce(nullif(billing_status, ''), 'active'),
@@ -57,6 +67,10 @@ where billing_status is null
    or billing_currency = ''
    or billing_country is null
    or billing_country = '';
+
+update public.families
+set scholarship_active = coalesce(scholarship_active, false)
+where scholarship_active is null;
 
 -- Users / Profiles (linked to Supabase Auth)
 create table if not exists users (
@@ -94,6 +108,20 @@ alter table public.users add column if not exists last_meetings_seen_at timestam
 alter table public.users add column if not exists last_goals_seen_at timestamptz default now();
 alter table public.users add column if not exists last_ai_seen_at timestamptz default now();
 alter table public.users add column if not exists created_at timestamptz default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'families_scholarship_granted_by_fkey'
+      and conrelid = 'public.families'::regclass
+  ) then
+    alter table public.families
+      add constraint families_scholarship_granted_by_fkey
+      foreign key (scholarship_granted_by) references public.users(id) on delete set null;
+  end if;
+end $$;
 
 update public.users u
 set

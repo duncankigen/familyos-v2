@@ -50,6 +50,7 @@ function adminOverviewMetrics(tickets, families, users) {
   const openTickets = tickets.filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length;
   const activeUsers = users.filter((user) => user.is_active).length;
   const inactiveUsers = Math.max(0, users.length - activeUsers);
+  const scholarshipFamilies = families.filter((family) => adminFamilyBillingState(family).accessSource === 'scholarship').length;
 
   return `
     <div class="admin-metrics">
@@ -68,7 +69,53 @@ function adminOverviewMetrics(tickets, families, users) {
         <div class="metric-value">${openTickets}</div>
         <div class="metric-sub">Open or in progress</div>
       </div>
+      <div class="metric-card">
+        <div class="metric-label">Scholarships</div>
+        <div class="metric-value">${scholarshipFamilies}</div>
+        <div class="metric-sub">Sponsored workspaces</div>
+      </div>
     </div>`;
+}
+
+function adminFamilyBillingState(family) {
+  return typeof deriveBillingState === 'function' ? deriveBillingState(family || {}) : {
+    status: family?.billing_status || 'active',
+    access: 'active',
+    accessSource: 'billing',
+    scholarshipEndsAt: family?.scholarship_ends_at || null,
+  };
+}
+
+function adminFamilyAccessBadge(family) {
+  const billing = adminFamilyBillingState(family);
+  if (billing.accessSource === 'scholarship') {
+    return `<span class="badge b-amber">scholarship</span>`;
+  }
+
+  const tone = {
+    active: 'b-green',
+    trialing: 'b-blue',
+    expired: 'b-red',
+    past_due: 'b-amber',
+    cancelled: 'b-gray',
+  };
+
+  return `<span class="badge ${tone[billing.status] || 'b-gray'}">${escapeHtml(billing.status || 'active')}</span>`;
+}
+
+function scholarshipDateValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function scholarshipIsoFromDate(value, endOfDay = false) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return null;
+  const suffix = endOfDay ? 'T23:59:59' : 'T00:00:00';
+  const date = new Date(`${trimmed}${suffix}`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function adminUserName(userId) {
@@ -178,6 +225,7 @@ function adminFamilyTable(families, users, tickets) {
         <thead>
           <tr>
             <th>Family</th>
+            <th>Access</th>
             <th>Members</th>
             <th>Open Tickets</th>
             <th>Created</th>
@@ -194,6 +242,7 @@ function adminFamilyTable(families, users, tickets) {
                   <div class="admin-row-title">${escapeHtml(family.name || 'Untitled family')}</div>
                   <div class="admin-row-copy">${escapeHtml(adminClip(family.description || 'No description provided.', 95))}</div>
                 </td>
+                <td>${adminFamilyAccessBadge(family)}</td>
                 <td>${memberCount}</td>
                 <td>${ticketCount}</td>
                 <td>
@@ -224,6 +273,7 @@ function adminFamilyTable(families, users, tickets) {
               <span class="badge b-blue">${memberCount} members</span>
             </div>
             <div class="admin-mobile-meta">
+              ${adminMetaLine('Access', adminFamilyAccessBadge(family))}
               ${adminMetaLine('Open tickets', String(ticketCount))}
               ${adminMetaLine('Created', `<span>${fmtDate(family.created_at)}</span><span class="admin-mobile-meta-sub">${ago(family.created_at)}</span>`)}
             </div>
@@ -315,7 +365,7 @@ async function adminLoadData() {
       .limit(25),
     DB.client
       .from('families')
-      .select('id,name,description,created_at')
+      .select('id,name,description,created_at,billing_status,billing_plan,billing_currency,trial_ends_at,subscription_ends_at,scholarship_active,scholarship_started_at,scholarship_ends_at,scholarship_note,scholarship_granted_by')
       .order('created_at', { ascending: false })
       .limit(50),
     DB.client
@@ -449,6 +499,120 @@ async function adminSetUserActive(userId, nextState) {
   await renderAdmin();
 }
 
+async function saveAdminScholarship(familyId) {
+  const family = (State.adminSnapshot?.families || []).find((item) => item.id === familyId);
+  if (!family) return;
+
+  const startDate = document.getElementById('admin-scholarship-start')?.value || '';
+  const endDate = document.getElementById('admin-scholarship-end')?.value || '';
+  const note = document.getElementById('admin-scholarship-note')?.value.trim() || null;
+  const startIso = scholarshipIsoFromDate(startDate, false);
+  const endIso = scholarshipIsoFromDate(endDate, true);
+
+  if (!startIso || !endIso) {
+    alert('Enter both scholarship start and end dates.');
+    return;
+  }
+
+  if (new Date(endIso).getTime() < new Date(startIso).getTime()) {
+    alert('Scholarship end date must be after the start date.');
+    return;
+  }
+
+  const { error } = await DB.client
+    .from('families')
+    .update({
+      scholarship_active: true,
+      scholarship_started_at: startIso,
+      scholarship_ends_at: endIso,
+      scholarship_note: note,
+      scholarship_granted_by: State.uid,
+    })
+    .eq('id', familyId);
+
+  if (error) {
+    alert(error.message || 'Unable to save this scholarship right now.');
+    return;
+  }
+
+  Modal.close();
+  await renderAdmin();
+  openAdminFamilySummary(familyId);
+}
+
+async function adminEndScholarshipNow(familyId, reopenSummary = true) {
+  const family = (State.adminSnapshot?.families || []).find((item) => item.id === familyId);
+  if (!family) return;
+
+  const noteInput = document.getElementById('admin-scholarship-note');
+  const note = noteInput ? (noteInput.value.trim() || family.scholarship_note || null) : (family.scholarship_note || null);
+
+  const { error } = await DB.client
+    .from('families')
+    .update({
+      scholarship_active: false,
+      scholarship_ends_at: new Date().toISOString(),
+      scholarship_note: note,
+      scholarship_granted_by: State.uid,
+    })
+    .eq('id', familyId);
+
+  if (error) {
+    alert(error.message || 'Unable to end this scholarship right now.');
+    return;
+  }
+
+  Modal.close();
+  await renderAdmin();
+  if (reopenSummary) openAdminFamilySummary(familyId);
+}
+
+function openAdminScholarshipModal(familyId) {
+  const family = (State.adminSnapshot?.families || []).find((item) => item.id === familyId);
+  if (!family) return;
+
+  const billing = adminFamilyBillingState(family);
+  const existingStart = scholarshipDateValue(family.scholarship_started_at) || scholarshipDateValue(new Date().toISOString());
+  const existingEnd = scholarshipDateValue(family.scholarship_ends_at);
+
+  Modal.open(`Scholarship: ${family.name || 'Untitled family'}`, `
+    <div class="admin-modal-stack">
+      <div class="account-center-hero ai-amber">
+        <div>
+          <div class="account-center-hero-title">${escapeHtml(family.name || 'Untitled family')}</div>
+          <div class="account-center-hero-copy">
+            Grant sponsored access so this workspace behaves like a paid family while the scholarship is active.
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Current Access</div>
+        <div class="details-grid">
+          <div><div class="details-label">Billing</div><div class="details-value">${adminFamilyAccessBadge(family)}</div></div>
+          <div><div class="details-label">Scholarship Ends</div><div class="details-value">${escapeHtml(billingDateLabel(family.scholarship_ends_at) || 'Not set')}</div></div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Scholarship Start</label>
+          <input id="admin-scholarship-start" class="form-input" type="date" value="${escapeHtml(existingStart)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Scholarship End</label>
+          <input id="admin-scholarship-end" class="form-input" type="date" value="${escapeHtml(existingEnd || existingStart)}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reason / Note</label>
+        <textarea id="admin-scholarship-note" class="form-textarea" style="min-height:110px;" placeholder="Optional note for why this family has sponsored access.">${escapeHtml(family.scholarship_note || '')}</textarea>
+      </div>
+    </div>
+  `, [
+    ...(family.scholarship_active ? [{ label: 'End Scholarship Now', cls: 'btn', fn: () => adminEndScholarshipNow(familyId) }] : []),
+    { label: 'Save Scholarship', cls: 'btn-primary', fn: () => saveAdminScholarship(familyId) },
+  ]);
+}
+
 function openAdminUserAccount(userId) {
   const user = (State.adminSnapshot?.users || []).find((item) => item.id === userId);
   if (!user) return;
@@ -506,6 +670,7 @@ function openAdminFamilySummary(familyId) {
 
   const users = (State.adminSnapshot?.users || []).filter((item) => item.family_id === familyId);
   const tickets = (State.adminSnapshot?.tickets || []).filter((item) => item.family_id === familyId);
+  const billing = adminFamilyBillingState(family);
 
   Modal.open(`Family: ${family.name || 'Untitled family'}`, `
     <div class="admin-modal-stack">
@@ -534,6 +699,36 @@ function openAdminFamilySummary(familyId) {
         </div>
       </div>
       <div class="card">
+        <div class="card-title">Billing and Scholarship</div>
+        <div class="details-grid">
+          <div>
+            <div class="details-label">Access</div>
+            <div class="details-value">${adminFamilyAccessBadge(family)}</div>
+          </div>
+          <div>
+            <div class="details-label">Plan</div>
+            <div class="details-value">${escapeHtml(billingPlanLabel(family.billing_plan || 'monthly'))}</div>
+          </div>
+          <div>
+            <div class="details-label">Trial Ends</div>
+            <div class="details-value">${escapeHtml(billingDateLabel(family.trial_ends_at) || 'Not set')}</div>
+          </div>
+          <div>
+            <div class="details-label">Subscription Ends</div>
+            <div class="details-value">${escapeHtml(billingDateLabel(family.subscription_ends_at) || 'Not set')}</div>
+          </div>
+          <div>
+            <div class="details-label">Scholarship Ends</div>
+            <div class="details-value">${escapeHtml(billingDateLabel(family.scholarship_ends_at) || 'Not set')}</div>
+          </div>
+          <div>
+            <div class="details-label">Billing Currency</div>
+            <div class="details-value">${escapeHtml((family.billing_currency || 'KES').toUpperCase())}</div>
+          </div>
+        </div>
+        ${family.scholarship_note ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(family.scholarship_note)}</div>` : ''}
+      </div>
+      <div class="card">
         <div class="card-title">Recent member snapshot</div>
         <div class="account-center-list">
           ${users.length
@@ -542,7 +737,10 @@ function openAdminFamilySummary(familyId) {
         </div>
       </div>
     </div>
-  `);
+  `, [
+    ...(family.scholarship_active ? [{ label: 'End Scholarship Now', cls: 'btn', fn: () => adminEndScholarshipNow(familyId, false) }] : []),
+    { label: 'Manage Scholarship', cls: 'btn-primary', fn: () => openAdminScholarshipModal(familyId) },
+  ]);
 }
 
 function adminPageActionsHtml() {
