@@ -52,6 +52,18 @@ function financeAccountMenu(accountId) {
     </details>`;
 }
 
+function financePaymentAccountsInfo() {
+  return `
+    <details class="finance-info">
+      <summary class="finance-info-toggle" aria-label="What are payment accounts used for?">
+        <span aria-hidden="true">i</span>
+      </summary>
+      <div class="finance-info-pop">
+        Save account details here for easy reuse. These accounts can be selected later when recording fees or other payments, so everyone uses the correct account details.
+      </div>
+    </details>`;
+}
+
 function paymentAccountForm(account = null) {
   return `
     <div class="form-group"><label class="form-label">Name</label>
@@ -147,7 +159,10 @@ async function renderFinance() {
         </div>
 
         <div class="card">
-          <div class="card-title">Payment Accounts</div>
+          <div class="finance-card-head">
+            <div class="card-title" style="margin-bottom:0;">Payment Accounts</div>
+            ${financePaymentAccountsInfo()}
+          </div>
           ${(accounts || []).map((account) => `
             <div style="padding:10px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;">
               <div class="flex-between" style="align-items:flex-start;gap:10px;">
