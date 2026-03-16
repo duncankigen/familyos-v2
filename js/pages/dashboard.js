@@ -67,6 +67,8 @@ async function renderDashboard() {
     { data: members },
     { data: tasks },
     { data: goals },
+    { data: meetings },
+    { data: votes },
     { data: announcements },
     { data: insights },
     { data: projects },
@@ -75,6 +77,8 @@ async function renderDashboard() {
     sb.from('users').select('*').eq('family_id', fid).eq('is_active', true),
     sb.from('tasks').select('*').eq('family_id', fid).neq('status', 'completed').order('deadline'),
     sb.from('family_goals').select('*').eq('family_id', fid).eq('status', 'active'),
+    sb.from('meetings').select('id,title,meeting_date,status').eq('family_id', fid).order('meeting_date', { ascending: true }),
+    sb.from('votes').select('id,status,deadline').eq('family_id', fid).eq('status', 'open').order('created_at', { ascending: false }),
     sb.from('announcements')
       .select(`
         id,
@@ -98,6 +102,15 @@ async function renderDashboard() {
   const announcementFeed = await attachDashboardAnnouncementAuthors(announcements || []);
   const activeInsights = (insights || []).filter((insight) => !insight.expires_at || new Date(insight.expires_at) > now);
   const activeProjects = (projects || []).filter((project) => project.status === 'active').length;
+  const scheduledMeetings = (meetings || []).filter((meeting) => meeting.status === 'scheduled');
+  const openVotes = votes || [];
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const nextScheduledMeeting = scheduledMeetings.find((meeting) => {
+    if (!meeting.meeting_date) return false;
+    return new Date(meeting.meeting_date) >= today;
+  }) || scheduledMeetings[0] || null;
+  const voteDeadlines = openVotes.filter((vote) => vote.deadline);
+  const nearestVoteDeadline = voteDeadlines.sort((a, b) => new Date(a.deadline) - new Date(b.deadline))[0] || null;
 
   DashboardPage.snapshotRows = [
     { metric: 'Generated On', value: fmtDate(now.toISOString()) },
@@ -111,6 +124,8 @@ async function renderDashboard() {
     { metric: 'Active Members', value: (members || []).length },
     { metric: 'Active Goals', value: (goals || []).length },
     { metric: 'Active Projects', value: activeProjects },
+    { metric: 'Scheduled Meetings', value: scheduledMeetings.length },
+    { metric: 'Open Votes', value: openVotes.length },
     { metric: 'Recent Announcements', value: announcementFeed.length },
     { metric: 'Unread AI Insights', value: activeInsights.length },
   ];
@@ -147,7 +162,7 @@ async function renderDashboard() {
         </div>
       </div>
 
-      <div class="g2 mb16">
+      <div class="g3 mb16">
         <div class="card">
           <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
             <div class="card-title" style="margin-bottom:0;">Active Tasks</div>
@@ -184,6 +199,36 @@ async function renderDashboard() {
               </div>`;
           }).join('')}
           ${!(goals || []).length ? empty('No goals set') : ''}
+        </div>
+
+        <div class="card">
+          <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
+            <div class="card-title" style="margin-bottom:0;">Meetings & Votes</div>
+            <div style="font-size:11px;color:var(--text3);">${scheduledMeetings.length} scheduled · ${openVotes.length} open votes</div>
+          </div>
+          ${nextScheduledMeeting ? `
+            <div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:12px;">
+              <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;">Next Meeting</div>
+              <div style="font-size:13px;font-weight:600;margin-top:4px;">${escapeHtml(nextScheduledMeeting.title || 'Untitled meeting')}</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:3px;">${fmtDate(nextScheduledMeeting.meeting_date)}</div>
+            </div>`
+            : `<div style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px;color:var(--text2);">No meeting scheduled yet.</div>`}
+          <div class="g2 mb12">
+            <div class="metric-card">
+              <div class="metric-label">Scheduled Meetings</div>
+              <div class="metric-value">${scheduledMeetings.length}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Open Votes</div>
+              <div class="metric-value" style="color:${openVotes.length ? 'var(--warning)' : 'var(--text)'};">${openVotes.length}</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.65;">
+            ${nearestVoteDeadline
+              ? `Nearest vote deadline: <strong>${fmtDate(nearestVoteDeadline.deadline)}</strong>`
+              : 'No active vote deadline right now.'}
+          </div>
+          <button class="btn btn-sm" style="margin-top:8px;" onclick="nav('meetings')">Open meetings</button>
         </div>
       </div>
 
