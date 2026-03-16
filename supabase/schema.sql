@@ -26,12 +26,18 @@ create table if not exists families (
   motto text,
   billing_status text not null default 'active',
   billing_plan text not null default 'monthly',
+  billing_provider text not null default 'paystack',
   billing_currency text not null default 'KES',
   billing_country text not null default 'KE',
   trial_started_at timestamptz,
   trial_ends_at timestamptz,
   subscription_started_at timestamptz,
   subscription_ends_at timestamptz,
+  paystack_customer_code text,
+  paystack_subscription_code text,
+  paystack_subscription_email_token text,
+  paystack_plan_code text,
+  paystack_last_reference text,
   scholarship_active boolean not null default false,
   scholarship_started_at timestamptz,
   scholarship_ends_at timestamptz,
@@ -42,12 +48,18 @@ create table if not exists families (
 
 alter table public.families add column if not exists billing_status text not null default 'active';
 alter table public.families add column if not exists billing_plan text not null default 'monthly';
+alter table public.families add column if not exists billing_provider text not null default 'paystack';
 alter table public.families add column if not exists billing_currency text not null default 'KES';
 alter table public.families add column if not exists billing_country text not null default 'KE';
 alter table public.families add column if not exists trial_started_at timestamptz;
 alter table public.families add column if not exists trial_ends_at timestamptz;
 alter table public.families add column if not exists subscription_started_at timestamptz;
 alter table public.families add column if not exists subscription_ends_at timestamptz;
+alter table public.families add column if not exists paystack_customer_code text;
+alter table public.families add column if not exists paystack_subscription_code text;
+alter table public.families add column if not exists paystack_subscription_email_token text;
+alter table public.families add column if not exists paystack_plan_code text;
+alter table public.families add column if not exists paystack_last_reference text;
 alter table public.families add column if not exists scholarship_active boolean not null default false;
 alter table public.families add column if not exists scholarship_started_at timestamptz;
 alter table public.families add column if not exists scholarship_ends_at timestamptz;
@@ -57,12 +69,15 @@ alter table public.families add column if not exists scholarship_granted_by uuid
 update public.families
 set billing_status = coalesce(nullif(billing_status, ''), 'active'),
     billing_plan = coalesce(nullif(billing_plan, ''), 'monthly'),
+    billing_provider = coalesce(nullif(billing_provider, ''), 'paystack'),
     billing_currency = coalesce(nullif(billing_currency, ''), 'KES'),
     billing_country = coalesce(nullif(billing_country, ''), 'KE')
 where billing_status is null
    or billing_status = ''
    or billing_plan is null
    or billing_plan = ''
+   or billing_provider is null
+   or billing_provider = ''
    or billing_currency is null
    or billing_currency = ''
    or billing_country is null
