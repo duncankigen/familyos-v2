@@ -8,8 +8,6 @@ const ContributionsPage = {
   items: [],
   members: [],
   memberById: {},
-  projects: [],
-  projectById: {},
 };
 
 function canManageContributions() {
@@ -25,45 +23,6 @@ function contributionInputValue(value) {
 
 function contributionMemberName(userId) {
   return ContributionsPage.memberById[userId]?.full_name || 'Unknown';
-}
-
-function contributionProjectName(projectId) {
-  return ContributionsPage.projectById[projectId]?.name || '';
-}
-
-function contributionTypeRequiresProject(type) {
-  return (type || 'general') === 'project';
-}
-
-function contributionProjectField(contribution = null) {
-  const selectedProjectId = contribution?.project_id || '';
-  const isVisible = contributionTypeRequiresProject(contribution?.contribution_type);
-
-  return `
-    <div id="c-project-wrap" class="form-group" style="display:${isVisible ? 'block' : 'none'};">
-      <label class="form-label">Project</label>
-      <select id="c-project" class="form-select" ${ContributionsPage.projects.length ? '' : 'disabled'}>
-        <option value="">${ContributionsPage.projects.length ? 'Select a project' : 'No projects available'}</option>
-        ${ContributionsPage.projects.map((project) => `
-          <option value="${project.id}" ${selectedProjectId === project.id ? 'selected' : ''}>${escapeHtml(project.name)}</option>
-        `).join('')}
-      </select>
-      <div style="font-size:12px;color:var(--text3);margin-top:6px;">
-        Link project contributions to the exact project they are funding.
-      </div>
-    </div>
-  `;
-}
-
-function toggleContributionProjectField() {
-  const type = document.getElementById('c-type')?.value || 'general';
-  const wrap = document.getElementById('c-project-wrap');
-  const input = document.getElementById('c-project');
-  if (!wrap || !input) return;
-
-  const shouldShow = contributionTypeRequiresProject(type);
-  wrap.style.display = shouldShow ? 'block' : 'none';
-  if (!shouldShow) input.value = '';
 }
 
 function contributionForm(contribution = null) {
@@ -87,7 +46,7 @@ function contributionForm(contribution = null) {
       </div>
       <div class="form-group">
         <label class="form-label">Type</label>
-        <select id="c-type" class="form-select" onchange="toggleContributionProjectField()">
+        <select id="c-type" class="form-select">
           <option value="general" ${contribution?.contribution_type === 'general' || !contribution ? 'selected' : ''}>General</option>
           <option value="project" ${contribution?.contribution_type === 'project' ? 'selected' : ''}>Project</option>
           <option value="fees" ${contribution?.contribution_type === 'fees' ? 'selected' : ''}>School Fees</option>
@@ -95,7 +54,6 @@ function contributionForm(contribution = null) {
         </select>
       </div>
     </div>
-    ${contributionProjectField(contribution)}
     <div class="form-group">
       <label class="form-label">Reference (optional)</label>
       <input id="c-ref" class="form-input" placeholder="e.g. Monthly contribution" value="${contributionInputValue(contribution?.reference)}"/>
@@ -111,10 +69,10 @@ function contributionForm(contribution = null) {
 async function renderContributions() {
   setTopbar('Contributions', `<button class="btn btn-primary btn-sm" onclick="openAddContrib()">+ Record</button>`);
 
-  const [{ data, error }, { data: members, error: membersError }, { data: projects, error: projectsError }] = await Promise.all([
+  const [{ data, error }, { data: members, error: membersError }] = await Promise.all([
     DB.client
       .from('contributions')
-      .select('id,family_id,user_id,project_id,amount,contribution_type,reference,notes,created_at')
+      .select('id,family_id,user_id,amount,contribution_type,reference,notes,created_at')
       .eq('family_id', State.fid)
       .order('created_at', { ascending: false })
       .limit(100),
@@ -123,15 +81,10 @@ async function renderContributions() {
       .select('id,full_name')
       .eq('family_id', State.fid)
       .order('full_name'),
-    DB.client
-      .from('projects')
-      .select('id,name')
-      .eq('family_id', State.fid)
-      .order('name'),
   ]);
 
-  if (error || membersError || projectsError) {
-    console.error('[Contributions] Failed to load:', error || membersError || projectsError);
+  if (error || membersError) {
+    console.error('[Contributions] Failed to load:', error || membersError);
     document.getElementById('page-content').innerHTML = `
       <div class="content">
         <div class="card">${empty('Unable to load contributions right now')}</div>
@@ -141,9 +94,7 @@ async function renderContributions() {
 
   ContributionsPage.items = data || [];
   ContributionsPage.members = members || [];
-  ContributionsPage.projects = projects || [];
   ContributionsPage.memberById = Object.fromEntries((ContributionsPage.members).map((member) => [member.id, member]));
-  ContributionsPage.projectById = Object.fromEntries((ContributionsPage.projects).map((project) => [project.id, project]));
 
   const total = ContributionsPage.items.reduce((sum, item) => sum + Number(item.amount), 0);
 
@@ -170,12 +121,7 @@ async function renderContributions() {
                 <tr>
                   <td><div class="flex gap8">${avatarHtml(contributionMemberName(contribution.user_id), 'av-sm')} ${contributionMemberName(contribution.user_id)}</div></td>
                   <td><strong style="color:var(--success);">KES ${fmt(contribution.amount)}</strong></td>
-                  <td>
-                    <div><span class="badge b-blue">${contribution.contribution_type}</span></div>
-                    ${contribution.contribution_type === 'project'
-                      ? `<div style="font-size:11px;color:var(--text3);margin-top:4px;">${escapeHtml(contributionProjectName(contribution.project_id) || 'Unassigned project')}</div>`
-                      : ''}
-                  </td>
+                  <td><span class="badge b-blue">${contribution.contribution_type}</span></td>
                   <td style="color:var(--text2);font-size:12px;">${contribution.reference || '—'}</td>
                   <td style="color:var(--text3);font-size:12px;">${fmtDate(contribution.created_at)}</td>
                   ${canManageContributions() ? `<td><button class="btn btn-sm" onclick="openEditContrib('${contribution.id}')">Manage</button></td>` : ''}
@@ -222,19 +168,11 @@ async function saveContribution(contributionId = null) {
   const userId = canManage
     ? (document.getElementById('c-user')?.value || State.uid)
     : State.uid;
-  const contributionType = document.getElementById('c-type')?.value || 'general';
-  const projectId = document.getElementById('c-project')?.value || '';
-
-  if (contributionTypeRequiresProject(contributionType) && !projectId) {
-    showErr('contrib-err', 'Select the project this contribution is funding.');
-    return;
-  }
 
   const payload = {
     user_id: userId,
     amount,
-    contribution_type: contributionType,
-    project_id: contributionTypeRequiresProject(contributionType) ? projectId : null,
+    contribution_type: document.getElementById('c-type')?.value || 'general',
     reference: document.getElementById('c-ref')?.value.trim() || null,
     notes: document.getElementById('c-notes')?.value.trim() || null,
   };

@@ -195,7 +195,6 @@ create table if not exists contributions (
   family_id uuid references families(id) on delete cascade,
   user_id uuid references users(id),
   recorded_by uuid references users(id) on delete set null,
-  project_id uuid,
   amount numeric not null check (amount > 0),
   contribution_type text not null default 'general',
   reference text,
@@ -204,9 +203,6 @@ create table if not exists contributions (
   updated_at timestamptz default now(),
   constraint contrib_type_check check (contribution_type in ('project','fees','emergency','general'))
 );
-
-create index if not exists contributions_family_project_idx
-on contributions(family_id, project_id, created_at desc);
 
 -- Expenses
 create table if not exists expenses (
@@ -508,17 +504,6 @@ create table if not exists vendors (
 
 do $$
 begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'contributions_project_id_fkey'
-      and conrelid = 'public.contributions'::regclass
-  ) then
-    alter table public.contributions
-      add constraint contributions_project_id_fkey
-      foreign key (project_id) references public.projects(id) on delete set null;
-  end if;
-
   if not exists (
     select 1
     from pg_constraint
@@ -1290,37 +1275,16 @@ using (family_id = get_my_family_id());
 
 create policy "members record own contributions"
 on contributions for insert
-with check (
-  family_id = get_my_family_id()
-  and user_id = auth.uid()
-  and (
-    project_id is null
-    or project_id in (select id from projects where family_id = get_my_family_id())
-  )
-);
+with check (family_id = get_my_family_id() and user_id = auth.uid());
 
 create policy "finance team records contributions"
 on contributions for insert
-with check (
-  family_id = get_my_family_id()
-  and get_my_role() in ('admin','treasurer')
-  and (
-    project_id is null
-    or project_id in (select id from projects where family_id = get_my_family_id())
-  )
-);
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 create policy "treasurer manages contributions"
 on contributions for update
 using (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'))
-with check (
-  family_id = get_my_family_id()
-  and get_my_role() in ('admin','treasurer')
-  and (
-    project_id is null
-    or project_id in (select id from projects where family_id = get_my_family_id())
-  )
-);
+with check (family_id = get_my_family_id() and get_my_role() in ('admin','treasurer'));
 
 -- EXPENSES: all family members can read; treasurer/project_manager can write
 create policy "family reads expenses"

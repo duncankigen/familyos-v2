@@ -76,8 +76,7 @@ async function renderReports() {
   const sb = DB.client;
   const fid = State.fid;
   const now = new Date();
-  const { data: projects } = await sb.from('projects').select('id,name,project_type').eq('family_id', fid);
-  const projectsById = Object.fromEntries((projects || []).map((project) => [project.id, project]));
+  const { data: projects } = await sb.from('projects').select('id,project_type').eq('family_id', fid);
   const farmingProjectIds = (projects || []).filter((project) => project.project_type === 'farming').map((project) => project.id);
   const { data: farmOutputs } = farmingProjectIds.length
     ? await sb.from('farm_outputs').select('project_id,usage_type,total_value,quantity,output_category,created_at').in('project_id', farmingProjectIds)
@@ -113,7 +112,7 @@ async function renderReports() {
     { data: documents },
     { data: insights },
   ] = await Promise.all([
-    sb.from('contributions').select('amount,created_at,user_id,project_id,contribution_type').eq('family_id', fid).order('created_at', { ascending: false }),
+    sb.from('contributions').select('amount,created_at,user_id,contribution_type').eq('family_id', fid).order('created_at', { ascending: false }),
     sb.from('expenses').select('amount,created_at,category,description,project_id,vendor_id').eq('family_id', fid).order('created_at', { ascending: false }),
     sb.from('users').select('id,full_name').eq('family_id', fid),
     sb.from('vendors').select('id,name').eq('family_id', fid),
@@ -146,25 +145,9 @@ async function renderReports() {
     memberTotals[name] = (memberTotals[name] || 0) + Number(item.amount || 0);
   });
 
-  const projectFundingTotals = {};
-  (contrib || []).forEach((item) => {
-    if ((item.contribution_type || 'general') !== 'project') return;
-    const key = item.project_id || '__unassigned__';
-    const label = item.project_id
-      ? (projectsById[item.project_id]?.name || 'Unknown project')
-      : 'Unassigned project';
-    if (!projectFundingTotals[key]) {
-      projectFundingTotals[key] = { label, amount: 0 };
-    }
-    projectFundingTotals[key].amount += Number(item.amount || 0);
-  });
-
   const topContributors = Object.entries(memberTotals)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
-  const projectFunding = Object.entries(projectFundingTotals)
-    .map(([key, value]) => ({ key, ...value }))
-    .sort((a, b) => b.amount - a.amount);
 
   const vendorLedger = FinanceCore.buildVendorLedger(vendors || [], exp || [], tasks || []);
   const vendorSpend = vendorLedger.topVendors;
@@ -189,8 +172,6 @@ async function renderReports() {
   const unreadInsights = (insights || []).filter((insight) => !insight.is_read && (!insight.expires_at || new Date(insight.expires_at) > now)).length;
   const contributorsCount = Object.keys(memberTotals).length;
   const totalVendorSpend = vendorLedger.totalPaid;
-  const totalProjectFunding = projectFunding.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const fundedProjectsCount = projectFunding.filter((item) => item.key !== '__unassigned__').length;
 
   ReportsPage.summaryRows = [
     { metric: 'Generated On', value: fmtDate(now.toISOString()) },
@@ -204,8 +185,6 @@ async function renderReports() {
     { metric: 'Unread AI Insights', value: unreadInsights },
     { metric: 'Tracked Vendors', value: (vendors || []).length },
     { metric: 'Vendor Spend', value: totalVendorSpend },
-    { metric: 'Project Contributions', value: totalProjectFunding },
-    { metric: 'Projects With Funding', value: fundedProjectsCount },
     { metric: 'Active Asset Value', value: assetValue },
     { metric: 'Asset Monthly Income', value: assetIncome },
     { metric: 'Sold Farm Output Value', value: farmSales },
@@ -217,9 +196,6 @@ async function renderReports() {
     date: fmtDate(item.created_at),
     member: membersById[item.user_id]?.full_name || 'Unknown',
     contribution_type: item.contribution_type || 'general',
-    project: item.project_id
-      ? (projectsById[item.project_id]?.name || 'Unknown project')
-      : ((item.contribution_type || 'general') === 'project' ? 'Unassigned project' : ''),
     amount_kes: Number(item.amount || 0),
   }));
 
@@ -302,37 +278,6 @@ async function renderReports() {
           </table>
         </div>
         ${!topContributors.length ? empty('No contribution history to report yet') : ''}
-      </div>
-
-      <div class="card" style="margin-top:16px;">
-        <div class="flex-between mb8" style="gap:8px;flex-wrap:wrap;">
-          <div>
-            <div class="card-title" style="margin-bottom:4px;">Project Funding</div>
-            <div style="font-size:12px;color:var(--text3);">Project-linked contributions recorded in the system.</div>
-          </div>
-          <div style="font-size:12px;color:var(--text2);font-weight:600;">KES ${fmt(totalProjectFunding)}</div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Project</th><th>Total Contributed</th><th>Share</th></tr></thead>
-            <tbody>
-              ${projectFunding.map((item) => `
-                <tr>
-                  <td>${escapeHtml(item.label)}</td>
-                  <td><strong style="color:var(--success);">KES ${fmt(item.amount)}</strong></td>
-                  <td>
-                    <div class="flex gap8" style="align-items:center;">
-                      <div class="progress" style="width:80px;">
-                        <div class="progress-fill" style="width:${totalProjectFunding ? Math.round(item.amount / totalProjectFunding * 100) : 0}%;background:var(--accent);"></div>
-                      </div>
-                      <span style="font-size:12px;">${totalProjectFunding ? Math.round(item.amount / totalProjectFunding * 100) : 0}%</span>
-                    </div>
-                  </td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-        ${!projectFunding.length ? empty('No project-linked contributions recorded yet') : ''}
       </div>
 
       <div class="g3" style="margin-top:16px;">
