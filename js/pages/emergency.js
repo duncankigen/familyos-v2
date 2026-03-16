@@ -43,6 +43,29 @@ async function upsertEmergencyFund(values) {
     });
 }
 
+function emergencyAppliedAmount(entry) {
+  return entry?.status === 'disbursed' ? Number(entry.amount || 0) : 0;
+}
+
+async function emergencyReserveForChange(existingEntry = null) {
+  const { data: fund, error } = await getEmergencyFundRecord();
+  if (error) return { error };
+
+  return {
+    fund: fund || null,
+    currentBalance: Number(fund?.current_amount || 0),
+    availableBalance: Number(fund?.current_amount || 0) + emergencyAppliedAmount(existingEntry),
+  };
+}
+
+function emergencyReserveErrorMessage(availableBalance) {
+  if (availableBalance <= 0) {
+    return 'Emergency reserve is depleted. Update the balance before marking another disbursement.';
+  }
+
+  return `This disbursement is higher than the available emergency balance of KES ${fmt(availableBalance)}. Update the balance first or reduce the amount.`;
+}
+
 function emergencyInputValue(value) {
   return escapeHtml(value);
 }
@@ -149,19 +172,28 @@ async function renderEmergency() {
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      <div class="card mb16" style="background:var(--bg3);">
+        <div style="font-size:12px;color:var(--text2);line-height:1.65;">
+          Disbursed emergency entries reduce the available emergency reserve shown here. When the reserve is depleted, new disbursements are blocked until you update the balance.
+        </div>
+      </div>
       <div class="g4 mb16">
-        <div class="metric-card"><div class="metric-label">Current Balance</div>
-          <div class="metric-value" style="color:var(--accent);">KES ${fmt(cur)}</div></div>
+        <div class="metric-card"><div class="metric-label">Available Balance</div>
+          <div class="metric-value" style="color:var(--accent);">KES ${fmt(cur)}</div>
+          <div class="metric-sub">Emergency reserve available now</div></div>
         <div class="metric-card"><div class="metric-label">Target</div>
-          <div class="metric-value">KES ${fmt(tar)}</div></div>
+          <div class="metric-value">KES ${fmt(tar)}</div>
+          <div class="metric-sub">Reserve goal</div></div>
         <div class="metric-card"><div class="metric-label">Progress</div>
-          <div class="metric-value" style="color:var(--warning);">${pct}%</div></div>
+          <div class="metric-value" style="color:var(--warning);">${pct}%</div>
+          <div class="metric-sub">Available balance vs target</div></div>
         <div class="metric-card"><div class="metric-label">Total Disbursed</div>
-          <div class="metric-value" style="color:var(--danger);">KES ${fmt(totalDisbursed)}</div></div>
+          <div class="metric-value" style="color:var(--danger);">KES ${fmt(totalDisbursed)}</div>
+          <div class="metric-sub">Recorded disbursed payouts</div></div>
       </div>
 
       <div class="card mb16">
-        <div class="card-title">Fund Progress</div>
+        <div class="card-title">Reserve Progress</div>
         <div class="flex-between mb8">
           <span style="font-size:13px;">KES ${fmt(cur)} of KES ${fmt(tar)}</span>
           <span style="font-size:13px;font-weight:700;color:var(--warning);">${pct}%</span>
@@ -169,6 +201,11 @@ async function renderEmergency() {
         <div class="progress" style="height:10px;">
           <div class="progress-fill" style="width:${pct}%;background:var(--warning);"></div>
         </div>
+        ${cur <= 0 ? `
+          <div style="font-size:12px;color:var(--danger);margin-top:10px;line-height:1.55;">
+            Emergency reserve is depleted. Update the available balance before marking another disbursement.
+          </div>
+        ` : ''}
         ${canManageEmergencyFund() ? `
           <div style="display:flex;gap:8px;margin-top:12px;">
             <button class="btn btn-sm btn-primary" onclick="openUpdateFund()">Update Balance</button>
@@ -215,7 +252,7 @@ function openUpdateFund() {
   if (!canManageEmergencyFund()) return;
 
   Modal.open('Update Emergency Fund Balance', `
-    <div class="form-group"><label class="form-label">New Balance (KES)</label>
+    <div class="form-group"><label class="form-label">Available Balance (KES)</label>
       <input id="ef-bal" class="form-input" type="number" placeholder="180000"/></div>
     <p id="emergency-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{
@@ -311,6 +348,11 @@ async function saveEmergencyDisbursement(disbursementId = null) {
 
   const eventDescription = document.getElementById('d-event')?.value.trim() || '';
   const amount = parseFloat(document.getElementById('d-amount')?.value || '');
+  const existingEntry = disbursementId
+    ? EmergencyPage.disbursements.find((entry) => entry.id === disbursementId) || null
+    : null;
+  const nextStatus = document.getElementById('d-status')?.value || 'pending';
+  const selectedDate = document.getElementById('d-date')?.value || null;
 
   if (!eventDescription) {
     showErr('emergency-err', 'Event or reason is required.');
@@ -319,6 +361,17 @@ async function saveEmergencyDisbursement(disbursementId = null) {
 
   if (!amount || amount <= 0) {
     showErr('emergency-err', 'Enter a valid amount greater than zero.');
+    return;
+  }
+
+  const { currentBalance, availableBalance, error: reserveError } = await emergencyReserveForChange(existingEntry);
+  if (reserveError) {
+    showErr('emergency-err', reserveError.message);
+    return;
+  }
+
+  if (nextStatus === 'disbursed' && amount > availableBalance) {
+    showErr('emergency-err', emergencyReserveErrorMessage(availableBalance));
     return;
   }
 
@@ -340,8 +393,10 @@ async function saveEmergencyDisbursement(disbursementId = null) {
     event_description: eventDescription,
     member_name: document.getElementById('d-member')?.value.trim() || null,
     amount,
-    status: document.getElementById('d-status')?.value || 'pending',
-    disbursed_at: document.getElementById('d-date')?.value || null,
+    status: nextStatus,
+    disbursed_at: nextStatus === 'disbursed'
+      ? (selectedDate || new Date().toISOString().slice(0, 10))
+      : selectedDate,
     reference: document.getElementById('d-ref')?.value.trim() || null,
     notes: document.getElementById('d-notes')?.value.trim() || null,
     ...attachmentPayload,
@@ -365,6 +420,21 @@ async function saveEmergencyDisbursement(disbursementId = null) {
     return;
   }
 
+  const nextBalance = nextStatus === 'disbursed'
+    ? availableBalance - amount
+    : availableBalance;
+
+  if (nextBalance !== currentBalance) {
+    const { error: fundError } = await upsertEmergencyFund({ current_amount: nextBalance });
+    if (fundError) {
+      console.error('[Emergency] Reserve update failed after disbursement save:', fundError);
+      Modal.close();
+      renderPage('emergency');
+      alert('Disbursement was saved, but the emergency reserve balance could not be updated automatically. Please review the balance.');
+      return;
+    }
+  }
+
   Modal.close();
   renderPage('emergency');
 }
@@ -376,7 +446,7 @@ function confirmDeleteEmergencyDisbursement(id) {
   if (!item) return;
 
   const warning = item.status === 'disbursed'
-    ? 'This disbursement is already marked as disbursed. Deleting it will remove it from emergency history and it will no longer count in Finance outflows.'
+    ? 'This disbursement is already marked as disbursed. Deleting it will remove it from emergency history and restore that amount to the available emergency balance.'
     : 'This will permanently remove the disbursement record from your emergency history.';
 
   Modal.open('Delete Disbursement', `
@@ -396,6 +466,8 @@ function confirmDeleteEmergencyDisbursement(id) {
 }
 
 async function deleteEmergencyDisbursement(id) {
+  const item = EmergencyPage.disbursements.find((entry) => entry.id === id) || null;
+  const refundAmount = emergencyAppliedAmount(item);
   const { error } = await DB.client
     .from('emergency_disbursements')
     .delete()
@@ -404,6 +476,26 @@ async function deleteEmergencyDisbursement(id) {
   if (error) {
     showErr('emergency-delete-err', error.message);
     return;
+  }
+
+  if (refundAmount > 0) {
+    const { currentBalance, error: reserveError } = await emergencyReserveForChange();
+    if (reserveError) {
+      console.error('[Emergency] Reserve restore failed after delete:', reserveError);
+      Modal.close();
+      renderPage('emergency');
+      alert('The disbursement was deleted, but the emergency reserve balance could not be restored automatically. Please review the balance.');
+      return;
+    }
+
+    const { error: fundError } = await upsertEmergencyFund({ current_amount: currentBalance + refundAmount });
+    if (fundError) {
+      console.error('[Emergency] Reserve restore failed after delete:', fundError);
+      Modal.close();
+      renderPage('emergency');
+      alert('The disbursement was deleted, but the emergency reserve balance could not be restored automatically. Please review the balance.');
+      return;
+    }
   }
 
   Modal.close();

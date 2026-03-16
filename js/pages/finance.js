@@ -144,18 +144,23 @@ async function renderFinance() {
 
       <div class="g2 mb16">
         <div class="card">
-          <div class="card-title">Contributions by Type</div>
+          <div class="card-title">Contribution Mix</div>
           ${Object.entries(byType).map(([key, value]) => `
-            <div class="mb12">
-              <div class="flex-between mb8">
+            <div class="flex-between mb12" style="align-items:flex-start;gap:12px;">
+              <div style="min-width:0;">
                 <span style="font-size:13px;text-transform:capitalize;">${key}</span>
-                <span style="font-size:13px;font-weight:600;">KES ${fmt(value)}</span>
               </div>
-              <div class="progress">
-                <div class="progress-fill" style="width:${summary.total_contributions ? Math.round(value / summary.total_contributions * 100) : 0}%;background:var(--accent);"></div>
+              <div style="text-align:right;flex-shrink:0;">
+                <div style="font-size:13px;font-weight:600;">KES ${fmt(value)}</div>
+                <div style="font-size:11px;color:var(--text3);">${summary.total_contributions ? Math.round(value / summary.total_contributions * 100) : 0}% of received contributions</div>
               </div>
             </div>`).join('')}
           ${!Object.keys(byType).length ? empty('No contributions yet') : ''}
+          ${Object.keys(byType).length ? `
+            <div style="margin-top:8px;font-size:12px;color:var(--text3);line-height:1.55;">
+              Tracking labels only. These amounts show contributions received by type, not reserved balances.
+            </div>
+          ` : ''}
         </div>
 
         <div class="card">
