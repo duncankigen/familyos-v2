@@ -90,6 +90,39 @@ a { color: var(--accent); text-decoration: none; }
 .sb-footer { padding: 12px 14px; border-top: 1px solid var(--border); }
 .user-pill  { display: flex; align-items: center; gap: 9px; cursor: pointer; border-radius: var(--radius-sm); padding: 4px; transition: background .15s; }
 .user-pill:hover { background: var(--bg3); }
+.sb-role-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sb-billing-status {
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  cursor: pointer;
+  background: var(--bg3);
+  color: var(--text2);
+}
+.sb-billing-status.is-trial {
+  background: color-mix(in srgb, var(--accent-bg) 78%, var(--bg2));
+  color: var(--accent);
+}
+.sb-billing-status.is-pro {
+  background: color-mix(in srgb, var(--success-bg) 80%, var(--bg2));
+  color: var(--success);
+}
+.sb-billing-status.is-scholarship {
+  background: color-mix(in srgb, var(--warning-bg) 82%, var(--bg2));
+  color: var(--warning);
+}
+.sb-billing-status.is-restricted {
+  background: color-mix(in srgb, var(--danger-bg) 82%, var(--bg2));
+  color: var(--danger);
+}
 
 /* ── Main content area ────────────────────────── */
 .main-wrap { margin-left: 228px; flex: 1; min-width: 0; }
@@ -116,46 +149,6 @@ a { color: var(--accent); text-decoration: none; }
   opacity: .55;
 }
 
-.workspace-banner {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg2);
-}
-.workspace-banner.is-trialing {
-  background: color-mix(in srgb, var(--accent-bg) 70%, var(--bg2));
-}
-.workspace-banner.is-restricted {
-  background: color-mix(in srgb, var(--danger-bg) 78%, var(--bg2));
-}
-.workspace-banner-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px 16px;
-}
-.workspace-banner-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.workspace-banner-title {
-  font-size: 13px;
-  font-weight: 700;
-}
-.workspace-banner-text {
-  color: var(--text2);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.workspace-banner-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .billing-readonly .btn,
 .billing-readonly .btn-primary,
 .billing-readonly .btn-secondary,
@@ -178,6 +171,111 @@ a { color: var(--accent); text-decoration: none; }
   background: color-mix(in srgb, var(--danger-bg) 72%, var(--bg2));
   color: var(--text2);
   font-size: 12px;
+}
+.dashboard-billing-banner {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.dashboard-billing-banner.is-trial {
+  background: color-mix(in srgb, var(--accent-bg) 78%, var(--bg2));
+}
+.dashboard-billing-banner.is-restricted {
+  background: color-mix(in srgb, var(--danger-bg) 80%, var(--bg2));
+}
+.dashboard-billing-copy {
+  display: grid;
+  gap: 4px;
+}
+.dashboard-billing-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+.dashboard-billing-text {
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.dashboard-billing-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dashboard-billing-close {
+  border: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+.billing-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.billing-plan-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px;
+  background: var(--bg2);
+  display: grid;
+  gap: 12px;
+}
+.billing-plan-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.billing-plan-card.is-recommended {
+  background: color-mix(in srgb, var(--accent-bg) 70%, var(--bg2));
+}
+.billing-plan-tag {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.billing-plan-price {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.billing-plan-price span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text3);
+}
+.billing-plan-copy {
+  color: var(--text2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.billing-plan-list {
+  display: grid;
+  gap: 8px;
+  color: var(--text2);
+  font-size: 12px;
+}
+.billing-plan-list div::before {
+  content: '•';
+  color: var(--accent);
+  margin-right: 8px;
 }
 
 /* ── Page content ─────────────────────────────── */
@@ -253,7 +351,7 @@ a { color: var(--accent); text-decoration: none; }
 
 @media (max-width: 600px) {
   .content { padding: 14px; }
-  .workspace-banner { padding: 12px 14px; }
-  .workspace-banner-card { align-items: start; flex-direction: column; }
   .billing-readonly-note { margin: 0 14px 14px; }
+  .dashboard-billing-banner { align-items: start; flex-direction: column; }
+  .billing-plan-grid { grid-template-columns: 1fr; }
 }

@@ -1285,6 +1285,22 @@ function billingPlanLabel(plan = 'monthly') {
   return plan === 'yearly' ? 'Yearly' : 'Monthly';
 }
 
+function billingTierLabel(billing = State.billing || deriveBillingState()) {
+  if (billing.accessSource === 'scholarship') return 'Scholarship';
+  if (billing.access === 'trialing') return 'Free Trial';
+  if (billing.status === 'active') return 'Pro';
+  if (billing.status === 'past_due') return 'Past Due';
+  if (billing.status === 'cancelled') return 'Cancelled';
+  return 'Expired';
+}
+
+function billingTierTone(billing = State.billing || deriveBillingState()) {
+  if (billing.accessSource === 'scholarship') return 'is-scholarship';
+  if (billing.access === 'trialing') return 'is-trial';
+  if (billing.status === 'active') return 'is-pro';
+  return 'is-restricted';
+}
+
 function billingStatusLabel(status = 'active') {
   const labels = {
     active: 'Active',
@@ -1306,6 +1322,76 @@ function isWorkspaceRestricted() {
 
 function isReadOnlyBillingPage(page) {
   return BILLING_READ_ONLY_PAGES.has(page);
+}
+
+function billingBannerDismissKey() {
+  if (!State.currentFamilyId) return null;
+  const marker = State.billing?.trialEndsAt || State.billing?.subscriptionEndsAt || State.billing?.status || 'billing';
+  return `fos_billing_banner_dismissed_${State.currentFamilyId}_${marker}`;
+}
+
+function hasDismissedBillingBanner() {
+  const key = billingBannerDismissKey();
+  if (!key) return false;
+  return localStorage.getItem(key) === '1';
+}
+
+function dismissBillingBanner() {
+  const key = billingBannerDismissKey();
+  if (!key) return;
+  localStorage.setItem(key, '1');
+  State.billingBannerOverride = false;
+  if (State.currentPage === 'dashboard' && typeof renderPage === 'function') {
+    renderPage('dashboard');
+  }
+}
+
+function shouldShowDashboardBillingBanner() {
+  const billing = State.billing || deriveBillingState();
+  if (billing.accessSource === 'scholarship') return false;
+  if (State.billingBannerOverride) return true;
+  if (billing.access === 'restricted') return true;
+  if (billing.access !== 'trialing') return false;
+  if ((billing.daysLeft || 0) <= 1) return true;
+  return !hasDismissedBillingBanner();
+}
+
+function dashboardBillingBannerHtml() {
+  const billing = State.billing || deriveBillingState();
+  if (!shouldShowDashboardBillingBanner()) return '';
+
+  const isTrialing = billing.access === 'trialing';
+  const planLabel = billingPlanLabel(billing.plan);
+  const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
+  const title = isTrialing
+    ? `${billing.daysLeft || 0} day${billing.daysLeft === 1 ? '' : 's'} left in your free trial`
+    : 'Billing is required to keep updating this workspace';
+  const text = isTrialing
+    ? `Your ${planLabel.toLowerCase()} workspace trial${trialEndsLabel ? ` ends on ${trialEndsLabel}` : ''}. You can review plans now so the family is ready before access changes.`
+    : 'This workspace is in read-only mode. Renew on a monthly or yearly plan to restore full access.';
+  const dismissHtml = isTrialing
+    ? `<button type="button" class="dashboard-billing-close" data-billing-allow="true" onclick="dismissBillingBanner()" aria-label="Dismiss trial banner">×</button>`
+    : '';
+
+  return `
+    <div class="dashboard-billing-banner ${isTrialing ? 'is-trial' : 'is-restricted'}">
+      <div class="dashboard-billing-copy">
+        <div class="dashboard-billing-title">${escapeHtml(title)}</div>
+        <div class="dashboard-billing-text">${escapeHtml(text)}</div>
+      </div>
+      <div class="dashboard-billing-actions">
+        <button class="btn btn-secondary" data-billing-allow="true" onclick="openBillingStatusModal('plans')">View plans</button>
+        ${dismissHtml}
+      </div>
+    </div>`;
+}
+
+function refreshSidebarBillingStatus() {
+  const statusEl = document.getElementById('sb-billing-status');
+  if (!statusEl) return;
+  const label = billingTierLabel();
+  statusEl.textContent = label;
+  statusEl.className = `sb-billing-status ${billingTierTone()}`;
 }
 
 function resolveBillingPageAccess(page) {
@@ -1342,7 +1428,37 @@ function applyBillingReadOnlyState(page, options = {}) {
   content.prepend(note);
 }
 
-function openBillingStatusModal() {
+async function saveWorkspaceBillingPlan(plan) {
+  if (!State.currentFamilyId || !plan) return;
+  const normalizedPlan = plan === 'yearly' ? 'yearly' : 'monthly';
+  const role = String(State.currentProfile?.role || '').toLowerCase();
+  if (!isPlatformAdminUser() && role !== 'admin') {
+    alert('Only a family admin can choose the workspace billing plan.');
+    return;
+  }
+
+  const { error } = await DB.client
+    .from('families')
+    .update({ billing_plan: normalizedPlan })
+    .eq('id', State.currentFamilyId);
+
+  if (error) {
+    alert(error.message || 'Unable to update the workspace billing plan right now.');
+    return;
+  }
+
+  State.billing = {
+    ...State.billing,
+    plan: normalizedPlan,
+  };
+  refreshSidebarBillingStatus();
+  if (State.currentPage === 'dashboard' && typeof renderPage === 'function') {
+    renderPage('dashboard');
+  }
+  openBillingStatusModal('plans');
+}
+
+function openBillingStatusModal(initialSection = 'overview') {
   const billing = State.billing || deriveBillingState();
   const planLabel = billingPlanLabel(billing.plan);
   const statusLabel = billingStatusLabel(billing.status);
@@ -1350,6 +1466,9 @@ function openBillingStatusModal() {
   const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
   const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
   const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
+  const yearlySelected = billing.plan === 'yearly';
+  const monthlySelected = !yearlySelected;
+  const canManagePlan = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
   const summaryLine = billing.accessSource === 'scholarship'
     ? `This workspace is active through a scholarship${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
     : billing.access === 'trialing'
@@ -1357,12 +1476,15 @@ function openBillingStatusModal() {
       : billing.access === 'restricted'
         ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
         : 'Your workspace billing is active.';
+  const planIntro = initialSection === 'plans'
+    ? 'Choose the workspace plan you want billing to use when checkout is connected.'
+    : summaryLine;
 
   Modal.open('Workspace Billing', `
     <div class="account-center-content">
       <div class="account-center-hero ai-amber">
         <div class="account-center-hero-title">${statusLabel} Workspace</div>
-        <div class="account-center-hero-copy">${summaryLine}</div>
+        <div class="account-center-hero-copy">${planIntro}</div>
       </div>
       <div class="account-center-grid">
         <div class="card">
@@ -1382,6 +1504,28 @@ function openBillingStatusModal() {
             <div>Paystack checkout will be connected next, after this access model is confirmed.</div>
             <div>Expired workspaces keep a read-only view of core pages while billing is resolved.</div>
           </div>
+        </div>
+      </div>
+      <div class="billing-plan-grid">
+        <div class="billing-plan-card ${monthlySelected ? 'is-selected' : ''}">
+          <div class="billing-plan-tag">Monthly</div>
+          <div class="billing-plan-price">KES 100 <span>/ month</span></div>
+          <div class="billing-plan-copy">Flexible month-to-month billing after the 7-day trial ends.</div>
+          <div class="billing-plan-list">
+            <div>Good for families starting with lighter usage</div>
+            <div>One shared workspace subscription</div>
+          </div>
+          ${canManagePlan ? `<button class="btn ${monthlySelected ? 'btn-secondary' : 'btn-primary'}" data-billing-allow="true" onclick="saveWorkspaceBillingPlan('monthly')">${monthlySelected ? 'Current plan' : 'Choose monthly'}</button>` : ''}
+        </div>
+        <div class="billing-plan-card is-recommended ${yearlySelected ? 'is-selected' : ''}">
+          <div class="billing-plan-tag">Recommended</div>
+          <div class="billing-plan-price">KES 1,000 <span>/ year</span></div>
+          <div class="billing-plan-copy">Best value for active families that use the workspace throughout the year.</div>
+          <div class="billing-plan-list">
+            <div>Save KES 200 compared with paying monthly for a full year</div>
+            <div>Fewer billing interruptions for the family team</div>
+          </div>
+          ${canManagePlan ? `<button class="btn ${yearlySelected ? 'btn-secondary' : 'btn-primary'}" data-billing-allow="true" onclick="saveWorkspaceBillingPlan('yearly')">${yearlySelected ? 'Current plan' : 'Choose yearly'}</button>` : ''}
         </div>
       </div>
       ${billing.accessSource === 'scholarship' ? `
@@ -1405,54 +1549,6 @@ function openBillingStatusModal() {
   `, [
     { label: 'Close', cls: 'btn', fn: () => Modal.close() },
   ]);
-}
-
-function renderWorkspaceBanner() {
-  const banner = document.getElementById('workspace-banner');
-  if (!banner) return;
-
-  if (!State.currentFamilyId || isBillingBypassed()) {
-    banner.style.display = 'none';
-    banner.innerHTML = '';
-    banner.className = 'workspace-banner';
-    return;
-  }
-
-  const billing = State.billing || deriveBillingState();
-  if (billing.access === 'active') {
-    banner.style.display = 'none';
-    banner.innerHTML = '';
-    banner.className = 'workspace-banner';
-    return;
-  }
-
-  const isTrialing = billing.access === 'trialing';
-  const isScholarship = billing.accessSource === 'scholarship';
-  const dateLabel = billingDateLabel(isTrialing ? billing.trialEndsAt : billing.subscriptionEndsAt);
-  const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
-  const title = isScholarship
-    ? 'Workspace access is currently covered by scholarship'
-    : isTrialing
-    ? `${billing.daysLeft || 0} day${billing.daysLeft === 1 ? '' : 's'} left in your free trial`
-    : 'Workspace is now in read-only mode';
-  const text = isScholarship
-    ? `This family has sponsored access${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
-    : isTrialing
-    ? `Your ${billingPlanLabel(billing.plan).toLowerCase()} workspace trial${dateLabel ? ` ends on ${dateLabel}` : ''}. Billing will use ${billing.currency} when checkout is connected.`
-    : 'You can still review selected pages, but new records and edits are blocked until billing is reactivated.';
-
-  banner.className = `workspace-banner ${isScholarship || isTrialing ? 'is-trialing' : 'is-restricted'}`;
-  banner.innerHTML = `
-    <div class="workspace-banner-card">
-      <div class="workspace-banner-copy">
-        <div class="workspace-banner-title">${escapeHtml(title)}</div>
-        <div class="workspace-banner-text">${escapeHtml(text)}</div>
-      </div>
-      <div class="workspace-banner-actions">
-        <button class="btn btn-secondary" data-billing-allow="true" onclick="openBillingStatusModal()">Review Billing</button>
-      </div>
-    </div>`;
-  banner.style.display = 'block';
 }
 
 async function fetchFamilyWorkspaceSnapshot(familyId) {
@@ -1491,17 +1587,18 @@ async function hydrateFamily(profile, user) {
   Sidebar.updateSectionIndicator('goals', false);
   Sidebar.updateSectionIndicator('ai', false);
   clearAuthModeParam();
+  refreshSidebarBillingStatus();
 
   if (!State.currentFamilyId) {
     State.billing = deriveBillingState();
-    renderWorkspaceBanner();
+    refreshSidebarBillingStatus();
     showFamilySetup();
     return;
   }
 
   const family = await fetchFamilyWorkspaceSnapshot(State.currentFamilyId);
   State.billing = deriveBillingState(family || {});
-  renderWorkspaceBanner();
+  refreshSidebarBillingStatus();
 
   if (family?.name) {
     document.getElementById('sb-family-name').textContent = family.name;
@@ -1513,7 +1610,8 @@ async function hydrateFamily(profile, user) {
   Router.go(Router.restore());
   if (State.billing.access === 'restricted' && !State.billingPromptShown) {
     State.billingPromptShown = true;
-    window.setTimeout(() => openBillingStatusModal(), 180);
+    State.billingBannerOverride = true;
+    window.setTimeout(() => openBillingStatusModal('plans'), 180);
   }
 }
 
@@ -1558,6 +1656,7 @@ function resetSessionState() {
   State.currentFamilyId = null;
   State.billing = deriveBillingState();
   State.billingPromptShown = false;
+  State.billingBannerOverride = false;
   State.isPlatformAdmin = false;
   State.adminSnapshot = { tickets: [], families: [], users: [] };
   State.unreadAnnouncements = 0;

@@ -26,6 +26,7 @@ const State = {
     daysLeft: null,
   },
   billingPromptShown: false,
+  billingBannerOverride: false,
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
   unreadAnnouncements: 0,

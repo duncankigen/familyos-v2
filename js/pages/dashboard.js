@@ -132,6 +132,7 @@ async function renderDashboard() {
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
+      ${typeof dashboardBillingBannerHtml === 'function' ? dashboardBillingBannerHtml() : ''}
       ${renderGuidanceNote(
         'dashboard_exports',
         'Dashboard snapshot tools',
@@ -278,6 +279,8 @@ async function renderDashboard() {
       </div>
 
     </div>`;
+
+  State.billingBannerOverride = false;
 }
 
 Router.register('dashboard', renderDashboard);

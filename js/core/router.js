@@ -109,8 +109,12 @@ const Router = {
       applyBillingReadOnlyState(finalPage, { readOnly: gate.readOnly });
     }
 
+    if (gate.showPrompt) {
+      State.billingBannerOverride = true;
+    }
+
     if (gate.showPrompt && typeof openBillingStatusModal === 'function') {
-      window.setTimeout(() => openBillingStatusModal(), 0);
+      window.setTimeout(() => openBillingStatusModal('plans'), 0);
     }
 
     if (typeof Sidebar?.refreshSectionIndicators === 'function') {

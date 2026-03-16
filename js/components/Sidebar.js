@@ -114,7 +114,16 @@ const Sidebar = {
           <div style="min-width:0;">
             <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
                  id="sb-username">Loading...</div>
-            <div style="font-size:11px;color:var(--text3);" id="sb-role">member</div>
+            <div class="sb-role-line">
+              <div style="font-size:11px;color:var(--text3);" id="sb-role">member</div>
+              <button
+                type="button"
+                id="sb-billing-status"
+                class="sb-billing-status"
+                onclick="event.stopPropagation();openBillingStatusModal('plans')"
+                title="Open workspace billing"
+              >Pro</button>
+            </div>
           </div>
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
             <span style="font-size:11px;color:var(--text3);">Account</span>
