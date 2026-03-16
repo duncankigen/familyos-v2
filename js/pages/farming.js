@@ -358,6 +358,8 @@ async function renderFarming() {
     farmExpenses,
   );
   const soldValue = farmSummary.salesValue;
+  const netPosition = soldValue - farmSummary.cashSpend;
+  const netTone = netPosition >= 0 ? 'var(--success)' : 'var(--danger)';
 
   document.getElementById('page-content').innerHTML = `
     <div class="content">
@@ -379,21 +381,39 @@ async function renderFarming() {
           <div class="metric-value">${farmOutputs.length}</div></div>
         <div class="metric-card"><div class="metric-label">This Month</div>
           <div class="metric-value" style="color:var(--accent);">${thisMonthOutputs.length}</div></div>
-        <div class="metric-card"><div class="metric-label">Sold Value</div>
-          <div class="metric-value" style="color:var(--success);">KES ${fmt(soldValue)}</div></div>
-        <div class="metric-card"><div class="metric-label">${scopedProject ? 'Operational Cost' : 'Farm Operational Cost'}</div>
-          <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmSummary.operationalCost)}</div></div>
-      </div>
-
-      <div class="g4 mb16">
-        <div class="metric-card"><div class="metric-label">Cash Spend</div>
-          <div class="metric-value">KES ${fmt(farmSummary.cashSpend)}</div></div>
         <div class="metric-card"><div class="metric-label">Sold Records</div>
           <div class="metric-value">${farmSummary.soldCount}</div></div>
         <div class="metric-card"><div class="metric-label">Stored Records</div>
           <div class="metric-value">${farmSummary.storedCount}</div></div>
-        <div class="metric-card"><div class="metric-label">Consumed Records</div>
-          <div class="metric-value">${farmSummary.consumedCount}</div></div>
+      </div>
+
+      <div class="card mb16" style="background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--card)) 0%, var(--card) 58%, color-mix(in srgb, var(--success) 8%, var(--card)) 100%);border:1px solid color-mix(in srgb, var(--line) 82%, var(--accent) 18%);">
+        <div class="card-title">Farm Money Snapshot</div>
+        <div class="g4 mb12">
+          <div class="metric-card">
+            <div class="metric-label">Sales Revenue</div>
+            <div class="metric-value" style="color:var(--success);">KES ${fmt(soldValue)}</div>
+            <div class="metric-sub">Value from outputs marked sold</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Actual Expenses</div>
+            <div class="metric-value" style="color:var(--warning);">KES ${fmt(farmSummary.cashSpend)}</div>
+            <div class="metric-sub">Linked expense records only</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Net Position</div>
+            <div class="metric-value" style="color:${netTone};">KES ${fmt(netPosition)}</div>
+            <div class="metric-sub">Sales revenue minus actual expenses</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Recorded Operational Cost</div>
+            <div class="metric-value">KES ${fmt(farmSummary.operationalCost)}</div>
+            <div class="metric-sub">Inputs, activity costs, and livestock events</div>
+          </div>
+        </div>
+        <div style="padding:12px 14px;border-radius:var(--radius-sm);background:color-mix(in srgb, var(--bg3) 85%, white 15%);font-size:12px;line-height:1.6;color:var(--text2);">
+          Recorded operational cost helps track farm work on the ground. Actual expenses are the real cash-out records already posted to the expense ledger.
+        </div>
       </div>
 
       ${!FarmingPage.projects.length ? `

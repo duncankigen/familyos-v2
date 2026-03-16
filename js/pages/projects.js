@@ -172,10 +172,10 @@ function renderProjectTypeHighlights(project, tasks, activities, expenses) {
   } else if (project.project_type === 'business') {
     title = 'Business Focus';
     points = [
-      `Operating cost recorded so far: KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
+      `Actual expenses posted so far: KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
       topCategory
-        ? `Main cost driver right now is ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
-        : 'No operating cost pattern is clear yet because few expenses are linked.',
+        ? `Main expense driver right now is ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
+        : 'No expense pattern is clear yet because few ledger expenses are linked.',
       linkedVendorCount
         ? `Supplier activity involves ${linkedVendorCount} vendor(s)${topVendor ? `, with ${escapeHtml(topVendorName)} currently the heaviest spend` : ''}.`
         : 'No suppliers or vendors are linked yet.',
@@ -186,7 +186,7 @@ function renderProjectTypeHighlights(project, tasks, activities, expenses) {
   } else if (project.project_type === 'investment') {
     title = 'Investment Focus';
     points = [
-      `Capital deployed into this investment currently totals KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
+      `Capital posted to the expense ledger currently totals KES ${fmt((expenses || []).reduce((sum, expense) => sum + Number(expense.amount || 0), 0))}.`,
       latestReview?.description
         ? `Latest review note: ${escapeHtml(latestReview.description)}`
         : latestUpdate?.description
@@ -206,7 +206,7 @@ function renderProjectTypeHighlights(project, tasks, activities, expenses) {
         ? `Latest update: ${escapeHtml(latestUpdate.description)}`
         : 'No project update has been logged yet.',
       topCategory
-        ? `Current spend is concentrated in ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
+        ? `Current ledger spend is concentrated in ${escapeHtml(topCategory.category)} at KES ${fmt(topCategory.amount)}.`
         : 'No meaningful expense pattern is visible yet.',
       nextTask
         ? `Next important action is ${escapeHtml(nextTask.title)}${nextTask.deadline ? ` by ${fmtDate(nextTask.deadline)}` : ''}.`
@@ -701,6 +701,11 @@ async function renderProjectDetail() {
 
       <div class="card" style="margin-top:16px;">
         <div class="card-title">Recent Expenses</div>
+        ${isFarmingProject ? `
+          <div style="margin-bottom:12px;padding:12px 14px;border-radius:var(--radius-sm);background:var(--bg3);font-size:12px;line-height:1.6;color:var(--text2);">
+            This section shows actual expense ledger entries for this farm project. Input costs, activity costs, and livestock event costs stay in Farm Manager as recorded operational costs unless they are also posted here as expenses.
+          </div>
+        ` : ''}
           ${(expenses || []).map((expense) => `
           <div class="flex-between mb8" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm);">
             <div>
