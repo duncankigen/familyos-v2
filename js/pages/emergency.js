@@ -292,11 +292,18 @@ function openEditDisbursement(id) {
   const item = EmergencyPage.disbursements.find((entry) => entry.id === id);
   if (!item) return;
 
-  Modal.open('Manage Disbursement', emergencyDisbursementForm(item), [{
-    label: 'Save Changes',
-    cls: 'btn-primary',
-    fn: () => saveEmergencyDisbursement(id),
-  }]);
+  Modal.open('Manage Disbursement', emergencyDisbursementForm(item), [
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: () => confirmDeleteEmergencyDisbursement(id),
+    },
+    {
+      label: 'Save Changes',
+      cls: 'btn-primary',
+      fn: () => saveEmergencyDisbursement(id),
+    },
+  ]);
 }
 
 async function saveEmergencyDisbursement(disbursementId = null) {
@@ -355,6 +362,47 @@ async function saveEmergencyDisbursement(disbursementId = null) {
 
   if (error) {
     showErr('emergency-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('emergency');
+}
+
+function confirmDeleteEmergencyDisbursement(id) {
+  if (!canManageEmergencyFund()) return;
+
+  const item = EmergencyPage.disbursements.find((entry) => entry.id === id);
+  if (!item) return;
+
+  const warning = item.status === 'disbursed'
+    ? 'This disbursement is already marked as disbursed. Deleting it will remove it from emergency history and it will no longer count in Finance outflows.'
+    : 'This will permanently remove the disbursement record from your emergency history.';
+
+  Modal.open('Delete Disbursement', `
+    <div style="font-size:14px;line-height:1.55;color:var(--text);">
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(item.event_description || 'Emergency disbursement')}</div>
+      <div style="color:var(--text2);">${escapeHtml(warning)}</div>
+    </div>
+    <p id="emergency-delete-err" style="color:var(--danger);font-size:12px;display:none;margin-top:10px;"></p>
+  `, [
+    { label: 'Cancel', cls: 'btn-ghost', fn: () => Modal.close() },
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: () => deleteEmergencyDisbursement(id),
+    },
+  ]);
+}
+
+async function deleteEmergencyDisbursement(id) {
+  const { error } = await DB.client
+    .from('emergency_disbursements')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    showErr('emergency-delete-err', error.message);
     return;
   }
 
