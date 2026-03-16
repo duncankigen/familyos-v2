@@ -1195,6 +1195,22 @@ async function ensureUserProfile() {
   return profile;
 }
 
+function clearAuthModeParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('mode')) return;
+
+  url.searchParams.delete('mode');
+  const nextSearch = url.searchParams.toString();
+  const nextUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${url.hash}`;
+
+  if (window.history?.replaceState) {
+    window.history.replaceState(null, '', nextUrl);
+    return;
+  }
+
+  window.location.search = nextSearch ? `?${nextSearch}` : '';
+}
+
 async function hydrateFamily(profile, user) {
   State.currentProfile = profile;
   State.currentFamilyId = profile.family_id;
@@ -1206,6 +1222,7 @@ async function hydrateFamily(profile, user) {
   Sidebar.updateSectionIndicator('meetings', false);
   Sidebar.updateSectionIndicator('goals', false);
   Sidebar.updateSectionIndicator('ai', false);
+  clearAuthModeParam();
 
   if (!State.currentFamilyId) {
     showFamilySetup();
