@@ -658,9 +658,14 @@ async function openAddActivity() {
   `, [{ label: 'Log', cls: 'btn-primary', fn: async () => {
     hideErr('activity-err');
     const projectId = document.getElementById('farm-project-id')?.value || '';
+    const description = document.getElementById('act-desc')?.value.trim() || '';
 
     if (!projectId) {
       showErr('activity-err', 'Select a farming project.');
+      return;
+    }
+    if (!description) {
+      showErr('activity-err', 'Add a short description so everyone understands what happened.');
       return;
     }
 
@@ -668,13 +673,16 @@ async function openAddActivity() {
       project_id: projectId,
       activity_type: document.getElementById('act-type')?.value || 'Other',
       activity_date: document.getElementById('act-date')?.value || null,
-      description: document.getElementById('act-desc')?.value.trim() || null,
+      description,
       cost: parseFloat(document.getElementById('act-cost')?.value || '') || 0,
       created_by: State.uid,
     });
 
     if (error) {
-      showErr('activity-err', error.message);
+      const message = /null value in column "description"/i.test(error.message || '')
+        ? 'Add a short description so everyone understands what happened.'
+        : error.message;
+      showErr('activity-err', message);
       return;
     }
 
