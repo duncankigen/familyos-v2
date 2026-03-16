@@ -27,6 +27,7 @@ const State = {
   },
   billingPromptShown: false,
   billingBannerOverride: false,
+  billingManagementNotice: '',
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
   unreadAnnouncements: 0,

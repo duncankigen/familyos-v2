@@ -408,6 +408,9 @@ function profileCenterSection(section) {
 
 function openProfileCenter(section = 'profile') {
   const normalizedSection = section === 'admin' ? 'profile' : (section || 'profile');
+  if (normalizedSection !== 'billing') {
+    State.billingManagementNotice = '';
+  }
   const profile = State.currentProfile || {};
   const user = State.currentUser || {};
   const displayName = escapeHtml((profile.full_name || user.email || 'Member').trim());
@@ -856,11 +859,15 @@ function accountCenterSection(section) {
     const billing = State.billing || deriveBillingState();
     const planLabel = billingPlanLabel(billing.plan);
     const statusLabel = billingStatusLabel(billing.status);
+    const tierLabel = billingTierLabel(billing);
     const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
     const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
     const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
     const isScholarship = billing.accessSource === 'scholarship';
-    const hasManagedSubscription = billing.status === 'active' && billing.access === 'active' && !isScholarship;
+    const hasManagedSubscription = isSubscribedWorkspace(billing);
+    const inlineNotice = State.billingManagementNotice
+      ? `<div class="billing-readonly-note" style="margin-bottom:14px;">${escapeHtml(State.billingManagementNotice)}</div>`
+      : '';
     const actionHtml = hasManagedSubscription
         ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" onclick="openPaystackBillingManagement()">Manage Subscription</button>`
         : `<button class="btn btn-primary" type="button" data-billing-allow="true" onclick="openBillingStatusModal('plans')">Subscribe</button>`;
@@ -871,9 +878,13 @@ function accountCenterSection(section) {
           <div class="account-center-hero-title">Billing</div>
           <div class="account-center-hero-copy">Review your workspace plan and dates here. Use Subscribe when you need to open the billing popup, or Manage Subscription after Paystack billing is active.</div>
         </div>
+        ${inlineNotice}
         <div class="account-center-grid">
           <div class="card">
             <div class="card-title">Current Workspace Plan</div>
+            <div class="tag-row" style="margin:0 0 12px 0;">
+              <span class="tag ${isScholarship ? 'b-blue' : hasManagedSubscription ? 'b-green' : billing.access === 'trialing' ? 'b-amber' : 'b-red'}">${escapeHtml(tierLabel)}</span>
+            </div>
             <div class="details-grid">
               <div><div class="details-label">Workspace</div><div class="details-value">${escapeHtml(familyName)}</div></div>
               <div><div class="details-label">Status</div><div class="details-value">${escapeHtml(statusLabel)}</div></div>
@@ -1343,10 +1354,17 @@ function billingPlanLabel(plan = 'monthly') {
   return plan === 'yearly' ? 'Yearly' : 'Monthly';
 }
 
+function isSubscribedWorkspace(billing = State.billing || deriveBillingState()) {
+  return billing?.status === 'active'
+    && billing?.access === 'active'
+    && billing?.accessSource !== 'scholarship';
+}
+
 function billingTierLabel(billing = State.billing || deriveBillingState()) {
   if (billing.accessSource === 'scholarship') return 'Scholarship';
   if (billing.access === 'trialing') return 'Free Trial';
-  if (billing.status === 'active') return 'Pro';
+  if (isSubscribedWorkspace(billing)) return 'Pro';
+  if (billing.status === 'active') return 'Active';
   if (billing.status === 'past_due') return 'Past Due';
   if (billing.status === 'cancelled') return 'Cancelled';
   return 'Expired';
@@ -1373,7 +1391,8 @@ function billingStatusLabel(status = 'active') {
 function openPaystackBillingManagement() {
   const manageUrl = String(RuntimeConfig?.paystackManageUrl || '').trim();
   if (!manageUrl) {
-    alert('Set FAMILYOS_CONFIG.billing.paystackManageUrl in js/config.js before using Manage Subscription.');
+    State.billingManagementNotice = 'Set FAMILYOS_CONFIG.billing.paystackManageUrl in js/config.js before using Manage Subscription.';
+    openProfileCenter('billing');
     return;
   }
   window.location.assign(manageUrl);

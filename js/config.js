@@ -23,6 +23,8 @@ window.FAMILYOS_CONFIG = window.FAMILYOS_CONFIG || {
   },
   billing: {
     paystackManageUrl: "",
+    paystackSuccessUrl: "",
+    paystackCancelUrl: "",
   },
 };
 
@@ -41,5 +43,13 @@ window.RuntimeConfig = {
 
   get paystackManageUrl() {
     return window.FAMILYOS_CONFIG?.billing?.paystackManageUrl || "";
+  },
+
+  get paystackSuccessUrl() {
+    return window.FAMILYOS_CONFIG?.billing?.paystackSuccessUrl || "";
+  },
+
+  get paystackCancelUrl() {
+    return window.FAMILYOS_CONFIG?.billing?.paystackCancelUrl || "";
   },
 };
