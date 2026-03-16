@@ -197,33 +197,73 @@ function openManageGoal(goalId) {
         </select></div>
     </div>
     <p id="goal-manage-err" style="color:var(--danger);font-size:12px;display:none;"></p>
-  `, [{ label: 'Save', cls: 'btn-primary', fn: async () => {
-    hideErr('goal-manage-err');
-    const title = document.getElementById('gm-title')?.value.trim() || '';
-    const targetAmount = parseFloat(document.getElementById('gm-target')?.value || '');
-    const currentAmount = parseFloat(document.getElementById('gm-current')?.value || '');
-    if (!title || !targetAmount || isNaN(currentAmount)) {
-      showErr('goal-manage-err', 'Title, target amount, and current amount are required.');
-      return;
-    }
+  `, [
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: async () => confirmDeleteGoal(goalId),
+    },
+    { label: 'Save', cls: 'btn-primary', fn: async () => {
+      hideErr('goal-manage-err');
+      const title = document.getElementById('gm-title')?.value.trim() || '';
+      const targetAmount = parseFloat(document.getElementById('gm-target')?.value || '');
+      const currentAmount = parseFloat(document.getElementById('gm-current')?.value || '');
+      if (!title || !targetAmount || isNaN(currentAmount)) {
+        showErr('goal-manage-err', 'Title, target amount, and current amount are required.');
+        return;
+      }
 
-    const { error } = await DB.client.from('family_goals').update({
-      title,
-      description: document.getElementById('gm-desc')?.value.trim() || null,
-      target_amount: targetAmount,
-      current_amount: currentAmount,
-      deadline: document.getElementById('gm-deadline')?.value || null,
-      status: document.getElementById('gm-status')?.value || 'active',
-    }).eq('id', goalId);
+      const { error } = await DB.client.from('family_goals').update({
+        title,
+        description: document.getElementById('gm-desc')?.value.trim() || null,
+        target_amount: targetAmount,
+        current_amount: currentAmount,
+        deadline: document.getElementById('gm-deadline')?.value || null,
+        status: document.getElementById('gm-status')?.value || 'active',
+      }).eq('id', goalId);
 
-    if (error) {
-      showErr('goal-manage-err', error.message);
-      return;
-    }
+      if (error) {
+        showErr('goal-manage-err', error.message);
+        return;
+      }
 
-    Modal.close();
-    renderPage('goals');
-  }}]);
+      Modal.close();
+      renderPage('goals');
+    }},
+  ]);
+}
+
+function confirmDeleteGoal(goalId) {
+  if (!canManageGoals()) return;
+  const goal = GoalsPage.goals.find((item) => item.id === goalId);
+  if (!goal) return;
+
+  Modal.open('Delete Goal', `
+    <div style="font-size:14px;line-height:1.55;color:var(--text);">
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(goal.title || 'Goal')}</div>
+      <div style="color:var(--text2);">
+        This will permanently remove the goal from the tracker. Use pause or cancel if you want to keep the history visible.
+      </div>
+    </div>
+    <p id="goal-delete-err" style="color:var(--danger);font-size:12px;display:none;margin-top:10px;"></p>
+  `, [
+    { label: 'Cancel', cls: 'btn-ghost', fn: () => Modal.close() },
+    {
+      label: 'Delete Goal',
+      cls: 'btn-danger',
+      fn: async () => deleteGoal(goalId),
+    },
+  ]);
+}
+
+async function deleteGoal(goalId) {
+  const { error } = await DB.client.from('family_goals').delete().eq('id', goalId);
+  if (error) {
+    showErr('goal-delete-err', error.message);
+    return;
+  }
+  Modal.close();
+  renderPage('goals');
 }
 
 Router.register('goals', renderGoals);

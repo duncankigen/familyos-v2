@@ -384,15 +384,21 @@ function openAddDocument() {
 }
 
 function openEditDocument(documentId) {
-  if (!canManageDocuments()) return;
   const documentRecord = VaultPage.docs.find((doc) => doc.id === documentId);
-  if (!documentRecord) return;
+  if (!documentRecord || !canEditDocument(documentRecord)) return;
 
-  Modal.open('Manage Document', vaultForm(documentRecord), [{
-    label: 'Save',
-    cls: 'btn-primary',
-    fn: async () => saveDocument(documentId),
-  }]);
+  Modal.open('Manage Document', vaultForm(documentRecord), [
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: async () => confirmDeleteDocument(documentId),
+    },
+    {
+      label: 'Save',
+      cls: 'btn-primary',
+      fn: async () => saveDocument(documentId),
+    },
+  ]);
 }
 
 async function saveDocument(documentId = null) {
@@ -438,6 +444,56 @@ async function saveDocument(documentId = null) {
   const { error } = await query;
   if (error) {
     showErr('vault-err', describeVaultSaveError(error));
+    return;
+  }
+
+  Modal.close();
+  renderPage('vault');
+}
+
+function confirmDeleteDocument(documentId) {
+  const documentRecord = VaultPage.docs.find((doc) => doc.id === documentId);
+  if (!documentRecord || !canEditDocument(documentRecord)) return;
+
+  Modal.open('Delete Document', `
+    <div style="font-size:14px;line-height:1.55;color:var(--text);">
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(documentRecord.title || 'Document')}</div>
+      <div style="color:var(--text2);">
+        This will permanently remove the vault record. Uploaded files will also be removed from the Vault bucket when possible.
+      </div>
+    </div>
+    <p id="vault-delete-err" style="color:var(--danger);font-size:12px;display:none;margin-top:10px;"></p>
+  `, [
+    { label: 'Cancel', cls: 'btn-ghost', fn: () => Modal.close() },
+    {
+      label: 'Delete Document',
+      cls: 'btn-danger',
+      fn: async () => deleteDocument(documentId),
+    },
+  ]);
+}
+
+async function deleteDocument(documentId) {
+  const documentRecord = VaultPage.docs.find((doc) => doc.id === documentId);
+  if (!documentRecord || !canEditDocument(documentRecord)) return;
+
+  const objectPath = documentStorageObjectPath(documentRecord.file_url);
+  if (objectPath) {
+    const { error: storageError } = await DB.client.storage
+      .from(VAULT_BUCKET)
+      .remove([objectPath]);
+    if (storageError) {
+      console.warn('[Vault] Failed to remove file from storage during delete:', storageError);
+    }
+  }
+
+  const { error } = await DB.client
+    .from('documents')
+    .delete()
+    .eq('id', documentId);
+
+  if (error) {
+    showErr('vault-delete-err', describeVaultSaveError(error));
     return;
   }
 

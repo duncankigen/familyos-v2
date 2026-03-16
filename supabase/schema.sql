@@ -1625,6 +1625,13 @@ with check (
   and (uploaded_by = auth.uid() or get_my_role() in ('admin','treasurer'))
 );
 
+create policy "authorized delete documents"
+on documents for delete
+using (
+  family_id = get_my_family_id()
+  and (uploaded_by = auth.uid() or get_my_role() in ('admin','treasurer'))
+);
+
 -- NOTIFICATIONS: users read own notifications
 create policy "users read own notifications"
 on notifications for select

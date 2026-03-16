@@ -179,11 +179,18 @@ function openEditAsset(assetId) {
   const asset = AssetsPage.assets.find((item) => item.id === assetId);
   if (!asset) return;
 
-  Modal.open('Manage Asset', assetForm(asset), [{
-    label: 'Save',
-    cls: 'btn-primary',
-    fn: async () => saveAsset(assetId),
-  }]);
+  Modal.open('Manage Asset', assetForm(asset), [
+    {
+      label: 'Delete',
+      cls: 'btn-danger',
+      fn: async () => confirmDeleteAsset(assetId),
+    },
+    {
+      label: 'Save',
+      cls: 'btn-primary',
+      fn: async () => saveAsset(assetId),
+    },
+  ]);
 }
 
 async function saveAsset(assetId = null) {
@@ -230,6 +237,45 @@ async function saveAsset(assetId = null) {
   const { error } = await query;
   if (error) {
     showErr('asset-err', error.message);
+    return;
+  }
+
+  Modal.close();
+  renderPage('assets');
+}
+
+async function confirmDeleteAsset(assetId) {
+  if (!canManageAssets()) return;
+  const asset = AssetsPage.assets.find((item) => item.id === assetId);
+  if (!asset) return;
+
+  Modal.open('Delete Asset', `
+    <div style="font-size:14px;line-height:1.55;color:var(--text);">
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(asset.name || 'Asset')}</div>
+      <div style="color:var(--text2);">
+        This will permanently remove the asset record from the register. Use archive instead if you only want to keep it out of active tracking.
+      </div>
+    </div>
+    <p id="asset-delete-err" style="color:var(--danger);font-size:12px;display:none;margin-top:10px;"></p>
+  `, [
+    { label: 'Cancel', cls: 'btn-ghost', fn: () => Modal.close() },
+    {
+      label: 'Delete Asset',
+      cls: 'btn-danger',
+      fn: async () => deleteAsset(assetId),
+    },
+  ]);
+}
+
+async function deleteAsset(assetId) {
+  const { error } = await DB.client
+    .from('assets')
+    .delete()
+    .eq('id', assetId)
+    .eq('family_id', State.fid);
+
+  if (error) {
+    showErr('asset-delete-err', error.message);
     return;
   }
 
