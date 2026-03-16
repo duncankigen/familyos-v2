@@ -21,6 +21,9 @@ window.FAMILYOS_CONFIG = window.FAMILYOS_CONFIG || {
   ai: {
     edgeFunctionUrl: "https://oibaqxipzhfqosgzhfng.supabase.co/functions/v1/ai-advisor",
   },
+  billing: {
+    paystackManageUrl: "",
+  },
 };
 
 window.RuntimeConfig = {
@@ -34,5 +37,9 @@ window.RuntimeConfig = {
 
   get aiEdgeFunctionUrl() {
     return window.FAMILYOS_CONFIG?.ai?.edgeFunctionUrl || "";
+  },
+
+  get paystackManageUrl() {
+    return window.FAMILYOS_CONFIG?.billing?.paystackManageUrl || "";
   },
 };

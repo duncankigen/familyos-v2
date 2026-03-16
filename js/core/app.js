@@ -858,21 +858,18 @@ function accountCenterSection(section) {
     const statusLabel = billingStatusLabel(billing.status);
     const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
     const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
-    const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
     const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
-    const nextStep = billing.accessSource === 'scholarship'
-      ? 'This workspace is currently covered by a scholarship override.'
-      : billing.access === 'trialing'
-        ? 'Your workspace is in its free-trial period. When Paystack is connected, this page will be where you manage renewal and billing decisions calmly.'
-        : billing.access === 'restricted'
-          ? 'This workspace is currently restricted. Once Paystack is connected, this page will let you resume service or manage billing directly.'
-          : 'This workspace is active. When Paystack is connected, this page will be where you manage renewals, unsubscribe, and account billing actions.';
+    const isScholarship = billing.accessSource === 'scholarship';
+    const hasManagedSubscription = billing.status === 'active' && billing.access === 'active' && !isScholarship;
+    const actionHtml = hasManagedSubscription
+        ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" onclick="openPaystackBillingManagement()">Manage Subscription</button>`
+        : `<button class="btn btn-primary" type="button" data-billing-allow="true" onclick="openBillingStatusModal('plans')">Subscribe</button>`;
 
     return `
       <div class="account-center-content">
         <div class="account-center-hero ai-amber">
           <div class="account-center-hero-title">Billing</div>
-          <div class="account-center-hero-copy">Use this page to review your workspace plan, billing dates, and future subscription management actions without opening the paywall popup.</div>
+          <div class="account-center-hero-copy">Review your workspace plan and dates here. Use Subscribe when you need to open the billing popup, or Manage Subscription after Paystack billing is active.</div>
         </div>
         <div class="account-center-grid">
           <div class="card">
@@ -885,60 +882,28 @@ function accountCenterSection(section) {
               <div><div class="details-label">Billing Currency</div><div class="details-value">${escapeHtml(billing.currency)}</div></div>
               <div><div class="details-label">Access Source</div><div class="details-value">${escapeHtml(billing.accessSource === 'scholarship' ? 'Scholarship' : 'Billing')}</div></div>
             </div>
+            ${!isScholarship ? `
+              <div class="account-center-actions" style="margin-top:12px;">
+                ${actionHtml}
+              </div>
+            ` : ''}
           </div>
-          <div class="card">
-            <div class="card-title">Management Direction</div>
-            <div class="account-center-list">
-              <div>${escapeHtml(nextStep)}</div>
-              <div>The paywall popup will continue to handle trial reminders, locked pages, and urgent renewal prompts.</div>
-              <div>This Billing tab is reserved for normal account management, including plan review and future Paystack subscription actions.</div>
-            </div>
-          </div>
-        </div>
-        <div class="billing-plan-grid">
-          <div class="billing-plan-card ${billing.plan === 'monthly' ? 'is-selected' : ''}">
-            <div class="billing-plan-tag">Monthly</div>
-            <div class="billing-plan-price">KES 100 <span>/ month</span></div>
-            <div class="billing-plan-copy">Flexible workspace billing for families that want a lighter monthly commitment.</div>
-            <div class="billing-plan-list">
-              <div>One family workspace subscription</div>
-              <div>Intended for month-to-month continuity</div>
-            </div>
-          </div>
-          <div class="billing-plan-card is-recommended ${billing.plan === 'yearly' ? 'is-selected' : ''}">
-            <div class="billing-plan-tag">Recommended</div>
-            <div class="billing-plan-price">KES 1,000 <span>/ year</span></div>
-            <div class="billing-plan-copy">Best value for families planning to stay active through the year.</div>
-            <div class="billing-plan-list">
-              <div>Save KES 200 compared with paying monthly for a full year</div>
-              <div>Fewer interruptions for the family team</div>
-            </div>
-          </div>
-        </div>
-        ${billing.accessSource === 'scholarship' ? `
-          <div class="card">
-            <div class="card-title">Scholarship Coverage</div>
-            <div class="details-grid">
-              <div><div class="details-label">Scholarship Ends</div><div class="details-value">${escapeHtml(scholarshipEndsLabel || 'Open-ended')}</div></div>
-              <div><div class="details-label">Effect</div><div class="details-value">Full workspace access while active</div></div>
-            </div>
-            ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:10px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
-          </div>
-        ` : ''}
-        <div class="account-center-grid">
           <div class="card">
             <div class="card-title">Important Dates</div>
             <div class="details-grid">
               <div><div class="details-label">Trial Ends</div><div class="details-value">${escapeHtml(trialEndsLabel || 'Not set')}</div></div>
               <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || 'Not set')}</div></div>
             </div>
-          </div>
-          <div class="card">
-            <div class="card-title">Paystack Management</div>
-            <div class="account-center-copy">Paystack self-service management is not connected yet. Once it is live, this is where family admins will manage renewal, unsubscribe, and billing actions without using the paywall popup.</div>
-            <div class="account-center-actions" style="margin-top:12px;">
-              <button class="btn btn-secondary" type="button" disabled data-billing-allow="true">Manage in Paystack Soon</button>
-            </div>
+            ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
+            ${!isScholarship && !hasManagedSubscription ? `
+              <div class="account-center-copy" style="margin-top:12px;">Subscribe opens the existing billing popup so the family admin can choose monthly or yearly billing without leaving the app.</div>
+            ` : ''}
+            ${hasManagedSubscription ? `
+              <div class="account-center-copy" style="margin-top:12px;">Manage Subscription will take the family admin to the Paystack billing-management page once the URL is configured.</div>
+            ` : ''}
+            ${isScholarship ? `
+              <div class="account-center-copy" style="margin-top:12px;">This workspace currently has scholarship-based access rather than a paid subscription.</div>
+            ` : ''}
           </div>
         </div>
         <div class="account-center-meta">${updatedLabel}</div>
@@ -1403,6 +1368,15 @@ function billingStatusLabel(status = 'active') {
     cancelled: 'Cancelled',
   };
   return labels[status] || 'Active';
+}
+
+function openPaystackBillingManagement() {
+  const manageUrl = String(RuntimeConfig?.paystackManageUrl || '').trim();
+  if (!manageUrl) {
+    alert('Set FAMILYOS_CONFIG.billing.paystackManageUrl in js/config.js before using Manage Subscription.');
+    return;
+  }
+  window.location.assign(manageUrl);
 }
 
 function isBillingBypassed() {
