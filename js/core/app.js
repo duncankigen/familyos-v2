@@ -1447,6 +1447,26 @@ function clearBillingActionLoading() {
   setBillingActionLoading('');
 }
 
+function prepareBillingLaunchWindow() {
+  try {
+    return window.open('', '_blank', 'noopener');
+  } catch {
+    return null;
+  }
+}
+
+function openBillingDestination(url, launchWindow = null) {
+  if (launchWindow && !launchWindow.closed) {
+    launchWindow.location = url;
+    if (typeof launchWindow.focus === 'function') {
+      launchWindow.focus();
+    }
+    return;
+  }
+
+  window.location.assign(url);
+}
+
 function openPaystackBillingManagement() {
   startWorkspaceBillingPortal().catch((error) => {
     clearBillingActionLoading();
@@ -1642,6 +1662,7 @@ async function startWorkspaceSubscriptionCheckout(plan) {
   }
 
   setBillingActionLoading(action);
+  const launchWindow = prepareBillingLaunchWindow();
   try {
     const result = await callBillingFunction('paystack-subscribe', { plan: normalizedPlan });
     if (result?.family) {
@@ -1653,8 +1674,12 @@ async function startWorkspaceSubscriptionCheckout(plan) {
       throw new Error('Paystack checkout link was not returned.');
     }
 
-    window.location.assign(result.authorization_url);
+    openBillingDestination(result.authorization_url, launchWindow);
+    clearBillingActionLoading();
   } catch (error) {
+    if (launchWindow && !launchWindow.closed) {
+      launchWindow.close();
+    }
     clearBillingActionLoading();
     throw error;
   }
@@ -1667,14 +1692,19 @@ async function startWorkspaceBillingPortal() {
   }
 
   setBillingActionLoading('manage-subscription');
+  const launchWindow = prepareBillingLaunchWindow();
   try {
     const result = await callBillingFunction('paystack-manage-subscription');
     if (!result?.manage_url) {
       throw new Error('Paystack management link was not returned.');
     }
 
-    window.location.assign(result.manage_url);
+    openBillingDestination(result.manage_url, launchWindow);
+    clearBillingActionLoading();
   } catch (error) {
+    if (launchWindow && !launchWindow.closed) {
+      launchWindow.close();
+    }
     clearBillingActionLoading();
     throw error;
   }
