@@ -914,6 +914,15 @@ function accountCenterSection(section) {
               <div><div class="details-label">Trial Ends</div><div class="details-value">${escapeHtml(trialEndsLabel || 'Not set')}</div></div>
               <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || 'Not set')}</div></div>
             </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+              <button class="btn"
+                type="button"
+                data-billing-allow="true"
+                onclick="openBillingStatusModal('plans')"
+                style="padding:0;border:none;background:none;color:var(--accent);font-size:12px;font-weight:600;">
+                View Plans
+              </button>
+            </div>
             ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
             ${!isScholarship && !hasManagedSubscription ? `
               <div class="account-center-copy" style="margin-top:12px;">Subscribe starts monthly or yearly billing in a new tab so the family admin can complete checkout and return here easily.</div>
