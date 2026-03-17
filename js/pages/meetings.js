@@ -13,13 +13,52 @@ function canManageMeetings() {
   return State.currentProfile?.role === 'admin';
 }
 
+function safeMeetingLinkUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readMeetingLink(inputId, errorId) {
+  const raw = document.getElementById(inputId)?.value.trim() || '';
+  if (!raw) return null;
+  const normalized = safeMeetingLinkUrl(raw);
+  if (!normalized) {
+    showErr(errorId, 'Meeting link must start with http:// or https://');
+    return undefined;
+  }
+  return normalized;
+}
+
+function openMeetingLink(meetingId) {
+  const meeting = MeetingsPage.meetings.find((item) => item.id === meetingId);
+  const link = safeMeetingLinkUrl(meeting?.meeting_link);
+  if (!link) {
+    alert('This meeting link is not valid.');
+    return;
+  }
+  window.open(link, '_blank', 'noopener');
+}
+
 function meetingButtonBar(meeting) {
-  if (!canManageMeetings()) return '';
+  const buttons = [];
+  if (safeMeetingLinkUrl(meeting?.meeting_link)) {
+    buttons.push(`<button class="btn btn-sm" onclick="openMeetingLink('${meeting.id}')">Open Meeting</button>`);
+  }
+  if (canManageMeetings()) {
+    buttons.push(`<button class="btn btn-sm" onclick="openAddVote('${meeting.id}')">Create Vote</button>`);
+    buttons.push(`<button class="btn btn-sm" onclick="openAddMinutes('${meeting.id}', \`${escapeHtml(meeting.minutes || '').replace(/`/g, '&#96;')}\`)">Minutes</button>`);
+    buttons.push(`<button class="btn btn-sm" onclick="openManageMeeting('${meeting.id}')">Manage</button>`);
+  }
+  if (!buttons.length) return '';
   return `
-    <div style="display:flex;gap:6px;margin-top:8px;">
-      <button class="btn btn-sm" onclick="openAddVote('${meeting.id}')">Create Vote</button>
-      <button class="btn btn-sm" onclick="openAddMinutes('${meeting.id}', \`${escapeHtml(meeting.minutes || '').replace(/`/g, '&#96;')}\`)">Minutes</button>
-      <button class="btn btn-sm" onclick="openManageMeeting('${meeting.id}')">Manage</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">
+      ${buttons.join('')}
     </div>`;
 }
 
@@ -65,6 +104,7 @@ async function renderMeetings() {
                   ${fmtDate(meeting.meeting_date)}${meeting.venue ? ` · ${escapeHtml(meeting.venue)}` : ''}
                 </div>
                 ${meeting.agenda ? `<div style="font-size:12px;color:var(--text2);margin-top:4px;">Agenda: ${escapeHtml(meeting.agenda.length > 80 ? `${meeting.agenda.substring(0, 80)}...` : meeting.agenda)}</div>` : ''}
+                ${safeMeetingLinkUrl(meeting.meeting_link) ? `<div style="font-size:11px;color:var(--accent);margin-top:4px;">Meeting link saved</div>` : ''}
                 ${meeting.minutes ? `<div style="font-size:11px;color:var(--text3);margin-top:4px;">Minutes available</div>` : ''}
                 ${meetingButtonBar(meeting)}
               </div>`).join('')}
@@ -127,6 +167,8 @@ function openAddMeeting() {
       <div class="form-group"><label class="form-label">Venue</label>
         <input id="m-venue" class="form-input" placeholder="Otieno homestead, Kitale"/></div>
     </div>
+    <div class="form-group"><label class="form-label">Meeting Link (optional)</label>
+      <input id="m-link" class="form-input" placeholder="https://..."/></div>
     <div class="form-group"><label class="form-label">Agenda</label>
       <textarea id="m-agenda" class="form-textarea" placeholder="1. Reports&#10;2. Elections&#10;3. AOB"></textarea></div>
     <p id="meeting-err" style="color:var(--danger);font-size:12px;display:none;"></p>
@@ -138,12 +180,15 @@ function openAddMeeting() {
       showErr('meeting-err', 'Meeting title and date are required.');
       return;
     }
+    const meetingLink = readMeetingLink('m-link', 'meeting-err');
+    if (meetingLink === undefined) return;
 
     const { error } = await DB.client.from('meetings').insert({
       family_id: State.fid,
       title,
       meeting_date: date,
       venue: document.getElementById('m-venue')?.value.trim() || null,
+      meeting_link: meetingLink,
       agenda: document.getElementById('m-agenda')?.value.trim() || null,
       status: 'scheduled',
       created_by: State.uid,
@@ -173,6 +218,8 @@ function openManageMeeting(meetingId) {
       <div class="form-group"><label class="form-label">Venue</label>
         <input id="m-venue" class="form-input" value="${escapeHtml(meeting.venue || '')}"/></div>
     </div>
+    <div class="form-group"><label class="form-label">Meeting Link (optional)</label>
+      <input id="m-link" class="form-input" placeholder="https://..." value="${escapeHtml(meeting.meeting_link || '')}"/></div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Status</label>
         <select id="m-status" class="form-select">
@@ -207,11 +254,14 @@ async function saveMeeting(meetingId) {
     showErr('meeting-manage-err', 'Meeting title and date are required.');
     return;
   }
+  const meetingLink = readMeetingLink('m-link', 'meeting-manage-err');
+  if (meetingLink === undefined) return;
 
   const { error } = await DB.client.from('meetings').update({
     title,
     meeting_date: date,
     venue: document.getElementById('m-venue')?.value.trim() || null,
+    meeting_link: meetingLink,
     agenda: document.getElementById('m-agenda')?.value.trim() || null,
     status: document.getElementById('m-status')?.value || 'scheduled',
   }).eq('id', meetingId);

@@ -637,6 +637,7 @@ create table if not exists meetings (
   title text not null,
   agenda text,
   venue text,
+  meeting_link text,
   meeting_date timestamptz not null,
   minutes text,
   status text default 'scheduled',
@@ -644,6 +645,8 @@ create table if not exists meetings (
   created_at timestamptz default now(),
   constraint meeting_status_check check (status in ('scheduled','completed','cancelled'))
 );
+
+alter table public.meetings add column if not exists meeting_link text;
 
 create table if not exists votes (
   id uuid primary key default uuid_generate_v4(),
