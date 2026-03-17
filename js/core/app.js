@@ -229,7 +229,16 @@ function profileCenterSection(section) {
             </div>
           </div>
           <div class="card">
-            <div class="card-title">2. Managing money</div>
+            <div class="card-title">2. Inviting and joining members</div>
+            <div class="profile-center-list">
+              <div>Admins can open <strong>Members</strong> and use <strong>Invite Member</strong> to create an invite code for a new person.</div>
+              <div>Share the invite code with the person you want to add, and note the role and expiry period chosen for that invite.</div>
+              <div>The invited person should sign up or sign in, choose <strong>Join Family</strong> during onboarding, then enter the invite code exactly as shared.</div>
+              <div>After joining, they should confirm their name, phone, and assigned role, then open the workspace sections relevant to their responsibilities.</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">3. Managing money</div>
             <div class="profile-center-list">
               <div>Record contributions as money coming into the family.</div>
               <div>Record expenses as money going out of the shared ledger.</div>
@@ -237,7 +246,7 @@ function profileCenterSection(section) {
             </div>
           </div>
           <div class="card">
-            <div class="card-title">3. Running projects and farming</div>
+            <div class="card-title">4. Running projects and farming</div>
             <div class="profile-center-list">
               <div>Create projects to track operational work, budgets, and progress.</div>
               <div>Use project-linked tasks and expenses to keep execution in context.</div>
@@ -245,7 +254,7 @@ function profileCenterSection(section) {
             </div>
           </div>
           <div class="card">
-            <div class="card-title">4. Working with people</div>
+            <div class="card-title">5. Working with people</div>
             <div class="profile-center-list">
               <div>Use Announcements for family-wide notices and updates.</div>
               <div>Use Meetings for agendas, decisions, and votes.</div>
@@ -253,7 +262,7 @@ function profileCenterSection(section) {
             </div>
           </div>
           <div class="card">
-            <div class="card-title">5. Using Vault and AI</div>
+            <div class="card-title">6. Using Vault and AI</div>
             <div class="profile-center-list">
               <div>Vault stores shared family documents, financial files, certificates, contracts, and family media links.</div>
               <div>AI Advisor answers questions using current family context and can also generate operational insights for the family feed.</div>
