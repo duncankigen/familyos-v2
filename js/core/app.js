@@ -865,14 +865,20 @@ function accountCenterSection(section) {
     const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
     const isScholarship = billing.accessSource === 'scholarship';
     const canManageBillingRole = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
-    const hasManagedSubscription = isSubscribedWorkspace(billing);
+    const hasManagedSubscription = hasManagedBillingSubscription(billing);
     const inlineNotice = State.billingManagementNotice
       ? `<div class="billing-readonly-note" style="margin-bottom:14px;">${escapeHtml(State.billingManagementNotice)}</div>`
       : '';
     const actionHtml = !canManageBillingRole
       ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" disabled>Ask a Family Admin to Manage Billing</button>`
       : hasManagedSubscription
-        ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" onclick="openPaystackBillingManagement()">Manage Subscription</button>`
+        ? billingActionButton({
+          label: 'Manage Subscription',
+          loadingLabel: 'Opening...',
+          action: 'manage-subscription',
+          cls: 'btn btn-secondary',
+          onclick: 'openPaystackBillingManagement()',
+        })
         : `<button class="btn btn-primary" type="button" data-billing-allow="true" onclick="openBillingStatusModal('plans')">Subscribe</button>`;
 
     return `
@@ -1323,7 +1329,9 @@ function deriveBillingState(family = {}) {
   let accessSource = 'billing';
   if (status === 'trialing') {
     access = daysLeft && daysLeft > 0 ? 'trialing' : 'restricted';
-  } else if (['expired', 'past_due', 'cancelled'].includes(status)) {
+  } else if (status === 'cancelled') {
+    access = (billingDaysLeft(subscriptionEndsAt) || 0) > 0 ? 'active' : 'restricted';
+  } else if (['expired', 'past_due'].includes(status)) {
     access = 'restricted';
   } else if (status === 'active' && subscriptionEndsAt) {
     access = (billingDaysLeft(subscriptionEndsAt) || 0) > 0 ? 'active' : 'restricted';
@@ -1358,17 +1366,22 @@ function billingPlanLabel(plan = 'monthly') {
 }
 
 function isSubscribedWorkspace(billing = State.billing || deriveBillingState()) {
-  return billing?.status === 'active'
+  return ['active', 'cancelled'].includes(billing?.status)
     && billing?.access === 'active'
     && billing?.accessSource !== 'scholarship';
+}
+
+function hasManagedBillingSubscription(billing = State.billing || deriveBillingState()) {
+  return isSubscribedWorkspace(billing);
 }
 
 function billingTierLabel(billing = State.billing || deriveBillingState()) {
   if (billing.accessSource === 'scholarship') return 'Scholarship';
   if (billing.access === 'trialing') return 'Free Trial';
+  if (billing.status === 'cancelled' && billing.access === 'active') return 'Cancelled';
+  if (billing.status === 'past_due') return 'Past Due';
   if (isSubscribedWorkspace(billing)) return 'Pro';
   if (billing.status === 'active') return 'Active';
-  if (billing.status === 'past_due') return 'Past Due';
   if (billing.status === 'cancelled') return 'Cancelled';
   return 'Expired';
 }
@@ -1376,7 +1389,7 @@ function billingTierLabel(billing = State.billing || deriveBillingState()) {
 function billingTierTone(billing = State.billing || deriveBillingState()) {
   if (billing.accessSource === 'scholarship') return 'is-scholarship';
   if (billing.access === 'trialing') return 'is-trial';
-  if (billing.status === 'active') return 'is-pro';
+  if (isSubscribedWorkspace(billing)) return 'is-pro';
   return 'is-restricted';
 }
 
@@ -1391,8 +1404,52 @@ function billingStatusLabel(status = 'active') {
   return labels[status] || 'Active';
 }
 
+function billingActionButton({ label, loadingLabel = 'Loading...', action = '', cls = 'btn', onclick = '', disabled = false, type = 'button' }) {
+  const isLoading = Boolean(State.billingUi?.isLoading && State.billingUi.action === action);
+  const content = isLoading
+    ? `<span class="btn-spinner" aria-hidden="true"></span>${escapeHtml(loadingLabel)}`
+    : escapeHtml(label);
+
+  return `
+    <button class="${cls} btn-inline${isLoading ? ' is-loading' : ''}" type="${type}" data-billing-allow="true"
+      ${action ? `data-billing-action="${action}"` : ''}
+      data-billing-label="${escapeHtml(label)}"
+      data-billing-loading-label="${escapeHtml(loadingLabel)}"
+      ${disabled || isLoading ? 'disabled' : ''}
+      ${onclick ? `onclick="${onclick}"` : ''}>${content}</button>`;
+}
+
+function syncBillingActionButtons() {
+  const isLoading = Boolean(State.billingUi?.isLoading);
+  const activeAction = State.billingUi?.action || '';
+  document.querySelectorAll('[data-billing-action]').forEach((button) => {
+    const label = button.dataset.billingLabel || button.textContent.trim() || 'Loading';
+    const loadingLabel = button.dataset.billingLoadingLabel || 'Loading...';
+    const matchesAction = isLoading && button.dataset.billingAction === activeAction;
+
+    button.disabled = isLoading;
+    button.classList.toggle('is-loading', matchesAction);
+    button.innerHTML = matchesAction
+      ? `<span class="btn-spinner" aria-hidden="true"></span>${escapeHtml(loadingLabel)}`
+      : escapeHtml(label);
+  });
+}
+
+function setBillingActionLoading(action = '') {
+  State.billingUi = {
+    isLoading: Boolean(action),
+    action: action || '',
+  };
+  syncBillingActionButtons();
+}
+
+function clearBillingActionLoading() {
+  setBillingActionLoading('');
+}
+
 function openPaystackBillingManagement() {
   startWorkspaceBillingPortal().catch((error) => {
+    clearBillingActionLoading();
     State.billingManagementNotice = error?.message || 'Unable to open Paystack subscription management right now.';
     openProfileCenter('billing');
   });
@@ -1517,30 +1574,37 @@ function applyBillingReadOnlyState(page, options = {}) {
 async function saveWorkspaceBillingPlan(plan) {
   if (!State.currentFamilyId || !plan) return;
   const normalizedPlan = plan === 'yearly' ? 'yearly' : 'monthly';
+  const action = `choose-plan-${normalizedPlan}`;
   const role = String(State.currentProfile?.role || '').toLowerCase();
   if (!isPlatformAdminUser() && role !== 'admin') {
     alert('Only a family admin can choose the workspace billing plan.');
     return;
   }
 
-  const { error } = await DB.client
-    .from('families')
-    .update({ billing_plan: normalizedPlan })
-    .eq('id', State.currentFamilyId);
+  setBillingActionLoading(action);
+  try {
+    const { error } = await DB.client
+      .from('families')
+      .update({ billing_plan: normalizedPlan })
+      .eq('id', State.currentFamilyId);
 
-  if (error) {
-    alert(error.message || 'Unable to update the workspace billing plan right now.');
-    return;
+    if (error) {
+      alert(error.message || 'Unable to update the workspace billing plan right now.');
+      return;
+    }
+
+    State.billing = {
+      ...State.billing,
+      plan: normalizedPlan,
+    };
+    refreshSidebarBillingStatus();
+    if (State.currentPage === 'dashboard' && typeof renderPage === 'function') {
+      renderPage('dashboard');
+    }
+  } finally {
+    clearBillingActionLoading();
   }
 
-  State.billing = {
-    ...State.billing,
-    plan: normalizedPlan,
-  };
-  refreshSidebarBillingStatus();
-  if (State.currentPage === 'dashboard' && typeof renderPage === 'function') {
-    renderPage('dashboard');
-  }
   openBillingStatusModal('plans');
 }
 
@@ -1571,22 +1635,29 @@ async function callBillingFunction(functionName, payload = {}) {
 
 async function startWorkspaceSubscriptionCheckout(plan) {
   const normalizedPlan = plan === 'yearly' ? 'yearly' : 'monthly';
+  const action = `subscribe-${normalizedPlan}`;
   const role = String(State.currentProfile?.role || '').toLowerCase();
   if (!isPlatformAdminUser() && role !== 'admin') {
     throw new Error('Only a family admin can start workspace billing.');
   }
 
-  const result = await callBillingFunction('paystack-subscribe', { plan: normalizedPlan });
-  if (result?.family) {
-    State.billing = deriveBillingState(result.family);
-    refreshSidebarBillingStatus();
-  }
+  setBillingActionLoading(action);
+  try {
+    const result = await callBillingFunction('paystack-subscribe', { plan: normalizedPlan });
+    if (result?.family) {
+      State.billing = deriveBillingState(result.family);
+      refreshSidebarBillingStatus();
+    }
 
-  if (!result?.authorization_url) {
-    throw new Error('Paystack checkout link was not returned.');
-  }
+    if (!result?.authorization_url) {
+      throw new Error('Paystack checkout link was not returned.');
+    }
 
-  window.location.assign(result.authorization_url);
+    window.location.assign(result.authorization_url);
+  } catch (error) {
+    clearBillingActionLoading();
+    throw error;
+  }
 }
 
 async function startWorkspaceBillingPortal() {
@@ -1595,12 +1666,18 @@ async function startWorkspaceBillingPortal() {
     throw new Error('Only a family admin can manage workspace billing.');
   }
 
-  const result = await callBillingFunction('paystack-manage-subscription');
-  if (!result?.manage_url) {
-    throw new Error('Paystack management link was not returned.');
-  }
+  setBillingActionLoading('manage-subscription');
+  try {
+    const result = await callBillingFunction('paystack-manage-subscription');
+    if (!result?.manage_url) {
+      throw new Error('Paystack management link was not returned.');
+    }
 
-  window.location.assign(result.manage_url);
+    window.location.assign(result.manage_url);
+  } catch (error) {
+    clearBillingActionLoading();
+    throw error;
+  }
 }
 
 function clearBillingReturnParams() {
@@ -1618,6 +1695,7 @@ function clearBillingReturnParams() {
 }
 
 async function handleBillingReturnParams() {
+  clearBillingActionLoading();
   const url = new URL(window.location.href);
   const billingState = String(url.searchParams.get('billing') || '').toLowerCase();
   const reference = url.searchParams.get('reference') || url.searchParams.get('trxref') || '';
@@ -1671,11 +1749,14 @@ function openBillingStatusModal(initialSection = 'overview') {
   const yearlySelected = billing.plan === 'yearly';
   const monthlySelected = !yearlySelected;
   const canManagePlan = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
-  const canStartCheckout = canManagePlan && !isSubscribedWorkspace(billing) && billing.accessSource !== 'scholarship';
+  const hasManagedSubscription = hasManagedBillingSubscription(billing);
+  const canStartCheckout = canManagePlan && !hasManagedSubscription && billing.accessSource !== 'scholarship';
   const summaryLine = billing.accessSource === 'scholarship'
     ? `This workspace is active through a scholarship${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
     : billing.access === 'trialing'
       ? `Your workspace is on a 7-day trial${trialEndsLabel ? ` through ${trialEndsLabel}` : ''}.`
+      : billing.status === 'cancelled' && billing.access === 'active'
+        ? `This subscription has been cancelled and stays active${renewsLabel ? ` until ${renewsLabel}` : ' until the current paid period ends'}.`
       : billing.access === 'restricted'
         ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
         : 'Your workspace billing is active.';
@@ -1719,9 +1800,21 @@ function openBillingStatusModal(initialSection = 'overview') {
             <div>One shared workspace subscription</div>
           </div>
           ${canStartCheckout
-            ? `<button class="btn btn-primary" data-billing-allow="true" onclick="startWorkspaceSubscriptionCheckout('monthly').catch((error) => alert(error?.message || 'Unable to start monthly billing.'))">Subscribe monthly</button>`
+            ? billingActionButton({
+              label: 'Subscribe monthly',
+              loadingLabel: 'Redirecting...',
+              action: 'subscribe-monthly',
+              cls: 'btn btn-primary',
+              onclick: "startWorkspaceSubscriptionCheckout('monthly').catch((error) => alert(error?.message || 'Unable to start monthly billing.'))",
+            })
             : canManagePlan
-              ? `<button class="btn ${monthlySelected ? 'btn-secondary' : 'btn-primary'}" data-billing-allow="true" onclick="saveWorkspaceBillingPlan('monthly')">${monthlySelected ? 'Current plan' : 'Choose monthly'}</button>`
+              ? billingActionButton({
+                label: monthlySelected ? 'Current plan' : 'Choose monthly',
+                loadingLabel: 'Saving...',
+                action: 'choose-plan-monthly',
+                cls: `btn ${monthlySelected ? 'btn-secondary' : 'btn-primary'}`,
+                onclick: "saveWorkspaceBillingPlan('monthly')",
+              })
               : ''}
         </div>
         <div class="billing-plan-card is-recommended ${yearlySelected ? 'is-selected' : ''}">
@@ -1733,9 +1826,21 @@ function openBillingStatusModal(initialSection = 'overview') {
             <div>Fewer billing interruptions for the family team</div>
           </div>
           ${canStartCheckout
-            ? `<button class="btn btn-primary" data-billing-allow="true" onclick="startWorkspaceSubscriptionCheckout('yearly').catch((error) => alert(error?.message || 'Unable to start yearly billing.'))">Subscribe yearly</button>`
+            ? billingActionButton({
+              label: 'Subscribe yearly',
+              loadingLabel: 'Redirecting...',
+              action: 'subscribe-yearly',
+              cls: 'btn btn-primary',
+              onclick: "startWorkspaceSubscriptionCheckout('yearly').catch((error) => alert(error?.message || 'Unable to start yearly billing.'))",
+            })
             : canManagePlan
-              ? `<button class="btn ${yearlySelected ? 'btn-secondary' : 'btn-primary'}" data-billing-allow="true" onclick="saveWorkspaceBillingPlan('yearly')">${yearlySelected ? 'Current plan' : 'Choose yearly'}</button>`
+              ? billingActionButton({
+                label: yearlySelected ? 'Current plan' : 'Choose yearly',
+                loadingLabel: 'Saving...',
+                action: 'choose-plan-yearly',
+                cls: `btn ${yearlySelected ? 'btn-secondary' : 'btn-primary'}`,
+                onclick: "saveWorkspaceBillingPlan('yearly')",
+              })
               : ''}
         </div>
       </div>
@@ -1867,6 +1972,7 @@ function resetSessionState() {
   State.currentProfile = null;
   State.currentFamilyId = null;
   State.billing = deriveBillingState();
+  State.billingUi = { isLoading: false, action: '' };
   State.billingPromptShown = false;
   State.billingBannerOverride = false;
   State.isPlatformAdmin = false;

@@ -28,6 +28,10 @@ const State = {
   billingPromptShown: false,
   billingBannerOverride: false,
   billingManagementNotice: '',
+  billingUi: {
+    isLoading: false,
+    action: '',
+  },
   authSubscription: null,  // auth state listener cleanup handle
   currentPage:     'dashboard',
   unreadAnnouncements: 0,
