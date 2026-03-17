@@ -19,6 +19,14 @@ function canManageFarmingRecords() {
   return ['admin', 'project_manager'].includes(State.currentProfile?.role);
 }
 
+function canCreateFarmingProjects() {
+  if (typeof canManageProjects === 'function') {
+    return canManageProjects();
+  }
+
+  return ['admin', 'project_manager'].includes(State.currentProfile?.role);
+}
+
 function canLogFarmingActivity() {
   return Boolean(State.currentProfile?.family_id || State.fid);
 }
@@ -130,12 +138,178 @@ async function ensureFarmingProjects() {
   const projects = await getFarmingProjects();
   if (projects.length) return projects;
 
+  openFarmingProjectRequiredModal();
+  return null;
+}
+
+function openProjectsFromFarming() {
+  clearActiveFarmingProject();
+  if (typeof rememberActiveProject === 'function') {
+    rememberActiveProject('');
+  }
+  nav('projects');
+}
+
+function farmingProjectActionButtonsMarkup() {
+  const actions = [];
+  if (canCreateFarmingProjects()) {
+    actions.push('<button class="btn btn-primary btn-sm" onclick="openCreateFarmingProjectModal()">Create Farming Project</button>');
+  }
+  actions.push('<button class="btn btn-sm" onclick="openProjectsFromFarming()">Open Projects</button>');
+  return `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+      ${actions.join('')}
+    </div>`;
+}
+
+function renderNoFarmingProjectsCard() {
+  return `
+    <div class="card mb16">
+      <div class="card-title">No farming projects yet</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;">
+        Create one from Projects to start tracking operations, or start it right here without leaving Farm Manager.
+      </div>
+      ${farmingProjectActionButtonsMarkup()}
+    </div>`;
+}
+
+function openFarmingProjectRequiredModal() {
+  const actions = [
+    {
+      label: 'Open Projects',
+      cls: 'btn',
+      fn: () => {
+        Modal.close();
+        openProjectsFromFarming();
+      },
+    },
+  ];
+
+  if (canCreateFarmingProjects()) {
+    actions.unshift({
+      label: 'Create Farming Project',
+      cls: 'btn-primary',
+      fn: () => openCreateFarmingProjectModal(),
+    });
+  }
+
   Modal.open('Farming Project Required', `
     <div style="font-size:13px;color:var(--text2);line-height:1.6;">
-      Create a farming project from the Projects page before adding crops, livestock, inputs, or activities.
+      Create a farming project before adding crops, livestock, inputs, outputs, or activities.
     </div>
-  `);
-  return null;
+  `, actions);
+}
+
+function farmingProjectCreateForm(members = []) {
+  return `
+    <div class="form-group"><label class="form-label">Project Name</label>
+      <input id="farm-project-name" class="form-input" placeholder="Kitale Maize Farm 2026" /></div>
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea id="farm-project-desc" class="form-textarea" placeholder="Project description..."></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type</label>
+        <input class="form-input" value="Farming" disabled />
+      </div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="farm-project-status" class="form-select">
+          ${['planning', 'active', 'paused', 'completed', 'cancelled'].map((value) => `
+            <option value="${value}" ${value === 'planning' ? 'selected' : ''}>${value.charAt(0).toUpperCase() + value.slice(1)}</option>
+          `).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Budget (KES)</label>
+        <input id="farm-project-budget" class="form-input" type="number" placeholder="150000" /></div>
+      <div class="form-group"><label class="form-label">Start Date</label>
+        <input id="farm-project-start" class="form-input" type="date" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">End Date</label>
+        <input id="farm-project-end" class="form-input" type="date" /></div>
+      <div class="form-group"><label class="form-label">Project Leader</label>
+        <select id="farm-project-leader" class="form-select">
+          <option value="">- Select -</option>
+          ${members.map((member) => `<option value="${member.id}">${escapeHtml(member.full_name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <p id="farm-project-create-err" style="color:var(--danger);font-size:12px;display:none;"></p>
+  `;
+}
+
+async function openCreateFarmingProjectModal() {
+  if (!canCreateFarmingProjects()) {
+    openProjectsFromFarming();
+    return;
+  }
+
+  let members = [];
+  const { data, error } = await DB.client
+    .from('users')
+    .select('id,full_name')
+    .eq('family_id', State.fid)
+    .order('full_name');
+
+  if (error) {
+    console.warn('[Farming] Failed to load members for farming project form:', error);
+  } else {
+    members = data || [];
+  }
+
+  Modal.open('New Farming Project', farmingProjectCreateForm(members), [{
+    label: 'Create',
+    cls: 'btn-primary',
+    fn: async () => saveFarmingProjectFromManager(),
+  }]);
+}
+
+async function saveFarmingProjectFromManager() {
+  hideErr('farm-project-create-err');
+  const name = document.getElementById('farm-project-name')?.value.trim() || '';
+
+  if (!name) {
+    showErr('farm-project-create-err', 'Project name is required.');
+    return null;
+  }
+
+  const payload = {
+    family_id: State.fid,
+    created_by: State.uid,
+    name,
+    description: document.getElementById('farm-project-desc')?.value.trim() || null,
+    project_type: 'farming',
+    status: document.getElementById('farm-project-status')?.value || 'planning',
+    budget: parseFloat(document.getElementById('farm-project-budget')?.value || '') || 0,
+    start_date: document.getElementById('farm-project-start')?.value || null,
+    end_date: document.getElementById('farm-project-end')?.value || null,
+  };
+
+  const { data, error } = await DB.client.from('projects').insert(payload).select().single();
+  if (error) {
+    showErr('farm-project-create-err', error.message || 'Unable to create farming project.');
+    return null;
+  }
+
+  const leaderId = document.getElementById('farm-project-leader')?.value || '';
+  if (leaderId) {
+    const { error: leaderInsertError } = await DB.client
+      .from('project_members')
+      .insert({ project_id: data.id, user_id: leaderId, role: 'leader' });
+
+    if (leaderInsertError) {
+      showErr('farm-project-create-err', leaderInsertError.message);
+      return null;
+    }
+  }
+
+  if (typeof rememberActiveProject === 'function') {
+    rememberActiveProject(data.id);
+  }
+  setActiveFarmingProject(data.id);
+  Modal.close();
+  renderPage('farming');
+  return data;
 }
 
 function farmingContextCard(project) {
@@ -416,10 +590,7 @@ async function renderFarming() {
         </div>
       </div>
 
-      ${!FarmingPage.projects.length ? `
-        <div class="card mb16">
-          ${empty('No farming projects yet - create one from Projects to start tracking operations')}
-        </div>` : ''}
+      ${!FarmingPage.projects.length ? renderNoFarmingProjectsCard() : ''}
 
       <div class="g2 mb16">
         <div class="card">
