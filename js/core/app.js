@@ -1449,7 +1449,7 @@ function clearBillingActionLoading() {
 
 function prepareBillingLaunchWindow() {
   try {
-    return window.open('', '_blank', 'noopener');
+    return window.open('about:blank', '_blank');
   } catch {
     return null;
   }
@@ -1457,11 +1457,15 @@ function prepareBillingLaunchWindow() {
 
 function openBillingDestination(url, launchWindow = null) {
   if (launchWindow && !launchWindow.closed) {
-    launchWindow.location = url;
-    if (typeof launchWindow.focus === 'function') {
-      launchWindow.focus();
+    try {
+      launchWindow.location.replace(url);
+      if (typeof launchWindow.focus === 'function') {
+        launchWindow.focus();
+      }
+      return;
+    } catch (error) {
+      console.warn('[Billing] Failed to reuse prepared billing tab, falling back to current tab:', error);
     }
-    return;
   }
 
   window.location.assign(url);
