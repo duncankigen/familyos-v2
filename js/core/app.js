@@ -885,7 +885,7 @@ function accountCenterSection(section) {
       <div class="account-center-content">
         <div class="account-center-hero ai-amber">
           <div class="account-center-hero-title">Billing</div>
-          <div class="account-center-hero-copy">Review your workspace plan and dates here. Use Subscribe when you need to open the billing popup, or Manage Subscription after Paystack billing is active.</div>
+          <div class="account-center-hero-copy">Review your workspace plan and dates here. Use Subscribe to start billing, or Manage Subscription to review or update your current subscription.</div>
         </div>
         ${inlineNotice}
         <div class="account-center-grid">
@@ -916,10 +916,10 @@ function accountCenterSection(section) {
             </div>
             ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
             ${!isScholarship && !hasManagedSubscription ? `
-              <div class="account-center-copy" style="margin-top:12px;">Subscribe opens the existing billing popup so the family admin can choose monthly or yearly billing without leaving the app.</div>
+              <div class="account-center-copy" style="margin-top:12px;">Subscribe starts monthly or yearly billing in a new tab so the family admin can complete checkout and return here easily.</div>
             ` : ''}
             ${hasManagedSubscription ? `
-              <div class="account-center-copy" style="margin-top:12px;">Manage Subscription will take the family admin to the Paystack billing-management page once the URL is configured.</div>
+              <div class="account-center-copy" style="margin-top:12px;">Manage Subscription opens the subscription page in a new tab so the family admin can review or update billing details.</div>
             ` : ''}
             ${isScholarship ? `
               <div class="account-center-copy" style="margin-top:12px;">This workspace currently has scholarship-based access rather than a paid subscription.</div>
@@ -1474,7 +1474,7 @@ function openBillingDestination(url, launchWindow = null) {
 function openPaystackBillingManagement() {
   startWorkspaceBillingPortal().catch((error) => {
     clearBillingActionLoading();
-    State.billingManagementNotice = error?.message || 'Unable to open Paystack subscription management right now.';
+    State.billingManagementNotice = error?.message || 'Unable to open subscription management right now.';
     openProfileCenter('billing');
   });
 }
@@ -1675,7 +1675,7 @@ async function startWorkspaceSubscriptionCheckout(plan) {
     }
 
     if (!result?.authorization_url) {
-      throw new Error('Paystack checkout link was not returned.');
+      throw new Error('Billing checkout could not be opened right now.');
     }
 
     openBillingDestination(result.authorization_url, launchWindow);
@@ -1700,7 +1700,7 @@ async function startWorkspaceBillingPortal() {
   try {
     const result = await callBillingFunction('paystack-manage-subscription');
     if (!result?.manage_url) {
-      throw new Error('Paystack management link was not returned.');
+      throw new Error('Subscription management could not be opened right now.');
     }
 
     openBillingDestination(result.manage_url, launchWindow);
@@ -1744,7 +1744,7 @@ async function handleBillingReturnParams() {
   }
 
   if (!reference) {
-    State.billingManagementNotice = 'Paystack returned without a payment reference. Please retry billing if needed.';
+    State.billingManagementNotice = 'Billing returned without a payment reference. Please retry if needed.';
     clearBillingReturnParams();
     window.setTimeout(() => openProfileCenter('billing'), 120);
     return true;
@@ -1795,7 +1795,7 @@ function openBillingStatusModal(initialSection = 'overview') {
         ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
         : 'Your workspace billing is active.';
   const planIntro = initialSection === 'plans'
-    ? 'Choose the workspace plan you want billing to use when checkout is connected.'
+    ? 'Choose the workspace plan you want to use for this family workspace.'
     : summaryLine;
 
   Modal.open('Workspace Billing', `
@@ -1819,8 +1819,8 @@ function openBillingStatusModal(initialSection = 'overview') {
           <div class="account-center-list">
             <div>Monthly billing will be KES 100. Yearly billing will be KES 1,000.</div>
             <div>New workspaces start with a 7-day free trial.</div>
-            <div>Paystack checkout will be connected next, after this access model is confirmed.</div>
-            <div>Expired workspaces keep a read-only view of core pages while billing is resolved.</div>
+            <div>Starting billing opens a secure checkout page in a new tab.</div>
+            <div>If billing lapses, core pages stay available in read-only mode until full access is restored.</div>
           </div>
         </div>
       </div>
