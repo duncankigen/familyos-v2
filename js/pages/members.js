@@ -137,6 +137,9 @@ function openAddMember() {
       Create an invite code and share it with the new member. They will sign up
       or sign in, then choose <strong>Join Family</strong> during onboarding.
     </p>
+    <div style="font-size:11px;color:var(--text3);margin:-4px 0 14px;">
+      Need help? <a href="#" onclick="openInviteMemberGuide();return false;" style="color:var(--accent);text-decoration:underline;">Open the user guide</a>
+    </div>
     <div class="form-group">
       <label class="form-label">Member Email (optional)</label>
       <input id="new-member-email" class="form-input" type="email" placeholder="member@email.com"/>
@@ -157,6 +160,11 @@ function openAddMember() {
     </div>
     <p id="invite-err" style="color:var(--danger);font-size:12px;display:none;"></p>
   `, [{ label: 'Create Invite', cls: 'btn-primary', fn: createFamilyInvite }]);
+}
+
+function openInviteMemberGuide() {
+  Modal.close();
+  window.setTimeout(() => openProfileCenter('guide'), 80);
 }
 
 async function createFamilyInvite() {
