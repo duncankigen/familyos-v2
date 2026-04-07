@@ -1,0 +1,23 @@
+# FamilyOS
+
+> FamilyOS is a shared operating system for African families to manage contributions, school fees, projects, farming, meetings, assets, and shared records.
+
+## Primary Pages
+- Home: https://familyoshq.com/
+- Blog: https://familyoshq.com/blog/
+
+## Public Articles
+- "Who Took the Money?" — Why Family Finance Arguments Happen and How to End Them Forever: https://familyoshq.com/blog/01-family-money-fights.html
+- School Fees Are Due in 3 Weeks and You Have No System: What To Do Right Now: https://familyoshq.com/blog/02-school-fees-stress.html
+- Why 7 in 10 Family Chamas Fail by Year Three (And the One Thing That Saves Them): https://familyoshq.com/blog/03-chama-collapse.html
+- Is Your Family Farm Actually Profitable? Most Families Don't Know. Here's How to Find Out: https://familyoshq.com/blog/04-farming-profit.html
+- One Hospital Bill Away From Chaos: Why Every African Family Needs an Emergency Fund — and How to Build One: https://familyoshq.com/blog/05-emergency-fund.html
+- The Family House That Never Gets Finished: How to Actually Complete a Construction Project: https://familyoshq.com/blog/06-construction-budget.html
+- How African Families Build Generational Wealth (Without a Trust Fund or Inheritance): https://familyoshq.com/blog/07-generational-wealth.html
+- The WhatsApp Screenshot Is Not a Financial Record: How to Properly Track Family Contributions: https://familyoshq.com/blog/08-contribution-tracking.html
+- How to Run a Family Meeting That Actually Makes Decisions (Instead of Just Creating Tension): https://familyoshq.com/blog/09-family-meetings.html
+- Family Land Is Being Lost to Disputes, Forgery and Neglect: How to Protect What You Own: https://familyoshq.com/blog/10-land-assets.html
+
+## Access Notes
+- https://familyoshq.com/app/ is the sign-in and application entry point. It is not a public knowledge page.
+- Public informational content is published on the homepage and blog.

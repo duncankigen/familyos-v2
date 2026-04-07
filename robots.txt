@@ -1,0 +1,28 @@
+User-agent: *
+Allow: /
+Disallow: /docs/
+Disallow: /landing-page-import/
+Disallow: /supabase/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /app/
+Disallow: /docs/
+Disallow: /landing-page-import/
+Disallow: /supabase/
+
+User-agent: GPTBot
+Allow: /
+Disallow: /app/
+Disallow: /docs/
+Disallow: /landing-page-import/
+Disallow: /supabase/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /app/
+Disallow: /docs/
+Disallow: /landing-page-import/
+Disallow: /supabase/
+
+Sitemap: https://familyoshq.com/sitemap.xml
