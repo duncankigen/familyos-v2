@@ -873,6 +873,7 @@ function accountCenterSection(section) {
     const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
     const isScholarship = billing.accessSource === 'scholarship';
     const canManageBillingRole = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
+    const hasPaidAccess = hasPaidWorkspaceBillingAccess(billing);
     const hasManagedSubscription = hasManagedBillingSubscription(billing);
     const canOpenPortal = canOpenManagedBillingPortal(billing);
     const inlineNotice = State.billingManagementNotice
@@ -888,7 +889,7 @@ function accountCenterSection(section) {
           cls: 'btn btn-secondary',
           onclick: 'openPaystackBillingManagement()',
         })
-        : hasManagedSubscription
+        : hasPaidAccess
           ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" disabled>Manage unavailable</button>`
         : `<button class="btn btn-primary" type="button" data-billing-allow="true" onclick="openBillingStatusModal('plans')">Subscribe</button>`;
 
@@ -903,7 +904,7 @@ function accountCenterSection(section) {
           <div class="card">
             <div class="card-title">Current Workspace Plan</div>
             <div class="tag-row" style="margin:0 0 12px 0;">
-              <span class="tag ${isScholarship ? 'b-blue' : hasManagedSubscription ? 'b-green' : billing.access === 'trialing' ? 'b-amber' : 'b-red'}">${escapeHtml(tierLabel)}</span>
+              <span class="tag ${isScholarship ? 'b-blue' : hasManagedSubscription ? 'b-green' : billing.access === 'trialing' ? 'b-amber' : hasPaidAccess ? 'b-amber' : 'b-red'}">${escapeHtml(tierLabel)}</span>
             </div>
             <div class="details-grid">
               <div><div class="details-label">Workspace</div><div class="details-value">${escapeHtml(familyName)}</div></div>
@@ -935,11 +936,11 @@ function accountCenterSection(section) {
               </button>
             </div>
             ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
-            ${!isScholarship && !hasManagedSubscription ? `
+            ${!isScholarship && !hasPaidAccess ? `
               <div class="account-center-copy" style="margin-top:12px;">Choose monthly or yearly to open checkout in a new tab. Your current plan only changes after payment is confirmed.</div>
             ` : ''}
-            ${billingDetailsSyncing(billing) ? `
-              <div class="account-center-copy" style="margin-top:12px;">Payment is confirmed, but Paystack is still syncing the next renewal date and subscription management link. Refresh again shortly.</div>
+            ${hasPaidAccess && !hasManagedSubscription ? `
+              <div class="account-center-copy" style="margin-top:12px;">This workspace has active paid access, but the plan details are not available here yet.</div>
             ` : ''}
             ${hasManagedSubscription ? `
               <div class="account-center-copy" style="margin-top:12px;">Manage Subscription opens the billing page in a new tab so the family admin can review billing details or switch plans safely.</div>
@@ -1394,15 +1395,20 @@ function billingPriceLabel(plan = 'monthly') {
   return plan === 'yearly' ? 'KES 2,999 / year' : 'KES 299 / month';
 }
 
-function billingDetailsSyncing(billing = State.billing || deriveBillingState()) {
-  return billing?.accessSource !== 'scholarship'
-    && ['active', 'cancelled'].includes(billing?.status)
-    && Boolean(billing?.subscriptionStartedAt)
-    && !billing?.subscriptionEndsAt;
+function hasPaidWorkspaceBillingAccess(billing = State.billing || deriveBillingState()) {
+  return ['active', 'cancelled'].includes(billing?.status)
+    && billing?.access === 'active'
+    && billing?.accessSource !== 'scholarship'
+    && Boolean(billing?.subscriptionEndsAt || billing?.subscriptionStartedAt);
+}
+
+function hasConfirmedBillingPlan(billing = State.billing || deriveBillingState()) {
+  return hasPaidWorkspaceBillingAccess(billing)
+    && Boolean(billing?.subscriptionEndsAt || billing?.paystackSubscriptionCode);
 }
 
 function billingPlanSnapshot(billing = State.billing || deriveBillingState()) {
-  const hasConfirmedPlan = hasManagedBillingSubscription(billing);
+  const hasConfirmedPlan = hasConfirmedBillingPlan(billing);
   if (billing.accessSource === 'scholarship') {
     return {
       hasConfirmedPlan: false,
@@ -1417,6 +1423,13 @@ function billingPlanSnapshot(billing = State.billing || deriveBillingState()) {
       amountLabel: billingPriceLabel(billing.plan),
     };
   }
+  if (hasPaidWorkspaceBillingAccess(billing)) {
+    return {
+      hasConfirmedPlan: false,
+      planLabel: 'Billing active',
+      amountLabel: 'Plan details not available yet',
+    };
+  }
   return {
     hasConfirmedPlan: false,
     planLabel: 'Not subscribed yet',
@@ -1425,14 +1438,11 @@ function billingPlanSnapshot(billing = State.billing || deriveBillingState()) {
 }
 
 function isSubscribedWorkspace(billing = State.billing || deriveBillingState()) {
-  return ['active', 'cancelled'].includes(billing?.status)
-    && billing?.access === 'active'
-    && billing?.accessSource !== 'scholarship'
-    && Boolean(billing?.subscriptionEndsAt || billing?.subscriptionStartedAt);
+  return hasPaidWorkspaceBillingAccess(billing);
 }
 
 function hasManagedBillingSubscription(billing = State.billing || deriveBillingState()) {
-  return isSubscribedWorkspace(billing);
+  return hasConfirmedBillingPlan(billing);
 }
 
 function canOpenManagedBillingPortal(billing = State.billing || deriveBillingState()) {
@@ -1444,7 +1454,7 @@ function billingTierLabel(billing = State.billing || deriveBillingState()) {
   if (billing.access === 'trialing') return 'Free Trial';
   if (billing.status === 'cancelled' && billing.access === 'active') return 'Cancelled';
   if (billing.status === 'past_due') return 'Past Due';
-  if (isSubscribedWorkspace(billing)) return 'Pro';
+  if (hasManagedBillingSubscription(billing)) return 'Pro';
   if (billing.status === 'active') return 'Active';
   if (billing.status === 'cancelled') return 'Cancelled';
   return 'Expired';
@@ -1453,7 +1463,7 @@ function billingTierLabel(billing = State.billing || deriveBillingState()) {
 function billingTierTone(billing = State.billing || deriveBillingState()) {
   if (billing.accessSource === 'scholarship') return 'is-scholarship';
   if (billing.access === 'trialing') return 'is-trial';
-  if (isSubscribedWorkspace(billing)) return 'is-pro';
+  if (hasManagedBillingSubscription(billing)) return 'is-pro';
   return 'is-restricted';
 }
 
@@ -1807,18 +1817,21 @@ function openBillingStatusModal(initialSection = 'overview') {
   const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
   const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
   const canManagePlan = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
+  const hasPaidAccess = hasPaidWorkspaceBillingAccess(billing);
   const hasManagedSubscription = hasManagedBillingSubscription(billing);
   const canOpenPortal = canOpenManagedBillingPortal(billing);
   const activePlan = hasManagedSubscription ? billing.plan : '';
   const monthlySelected = activePlan === 'monthly';
   const yearlySelected = activePlan === 'yearly';
-  const canStartCheckout = canManagePlan && !hasManagedSubscription && billing.accessSource !== 'scholarship';
+  const canStartCheckout = canManagePlan && !hasPaidAccess && billing.accessSource !== 'scholarship';
   const summaryLine = billing.accessSource === 'scholarship'
     ? `This workspace is active through a scholarship${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
     : billing.access === 'trialing'
       ? `Your workspace is on a 7-day trial${trialEndsLabel ? ` through ${trialEndsLabel}` : ''}.`
       : billing.status === 'cancelled' && billing.access === 'active'
         ? `This subscription has been cancelled and stays active${renewsLabel ? ` until ${renewsLabel}` : ' until the current paid period ends'}.`
+      : hasPaidAccess && !hasManagedSubscription
+        ? 'Your workspace billing is active, but the current plan details are not available here yet.'
       : billing.access === 'restricted'
         ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
         : hasManagedSubscription
@@ -1872,7 +1885,7 @@ function openBillingStatusModal(initialSection = 'overview') {
               cls: 'btn btn-primary',
               onclick: "startWorkspaceSubscriptionCheckout('monthly').catch((error) => alert(error?.message || 'Unable to start monthly billing.'))",
             })
-            : hasManagedSubscription && canManagePlan
+            : hasPaidAccess && canManagePlan
               ? (monthlySelected
                 ? '<button class="btn btn-secondary" type="button" disabled>Current plan</button>'
                 : canOpenPortal
@@ -1884,7 +1897,7 @@ function openBillingStatusModal(initialSection = 'overview') {
                     onclick: 'openPaystackBillingManagement()',
                   })
                   : '<button class="btn btn-secondary" type="button" disabled>Manage unavailable</button>')
-            : !canManagePlan && hasManagedSubscription
+            : !canManagePlan && hasPaidAccess
               ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
         </div>
@@ -1904,7 +1917,7 @@ function openBillingStatusModal(initialSection = 'overview') {
               cls: 'btn btn-primary',
               onclick: "startWorkspaceSubscriptionCheckout('yearly').catch((error) => alert(error?.message || 'Unable to start yearly billing.'))",
             })
-            : hasManagedSubscription && canManagePlan
+            : hasPaidAccess && canManagePlan
               ? (yearlySelected
                 ? '<button class="btn btn-secondary" type="button" disabled>Current plan</button>'
                 : canOpenPortal
@@ -1916,7 +1929,7 @@ function openBillingStatusModal(initialSection = 'overview') {
                     onclick: 'openPaystackBillingManagement()',
                   })
                   : '<button class="btn btn-secondary" type="button" disabled>Manage unavailable</button>')
-            : !canManagePlan && hasManagedSubscription
+            : !canManagePlan && hasPaidAccess
               ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
         </div>
