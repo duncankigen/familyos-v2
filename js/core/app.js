@@ -889,7 +889,7 @@ function accountCenterSection(section) {
           onclick: 'openPaystackBillingManagement()',
         })
         : hasManagedSubscription
-          ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" disabled>Subscription syncing...</button>`
+          ? `<button class="btn btn-secondary" type="button" data-billing-allow="true" disabled>Manage unavailable</button>`
         : `<button class="btn btn-primary" type="button" data-billing-allow="true" onclick="openBillingStatusModal('plans')">Subscribe</button>`;
 
     return `
@@ -923,7 +923,7 @@ function accountCenterSection(section) {
             <div class="card-title">Important Dates</div>
             <div class="details-grid">
               <div><div class="details-label">Trial Ends</div><div class="details-value">${escapeHtml(trialEndsLabel || 'Not set')}</div></div>
-              <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || (billingDetailsSyncing(billing) ? 'Syncing from Paystack...' : 'Not set'))}</div></div>
+              <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || 'Not set')}</div></div>
             </div>
             <div style="display:flex;justify-content:flex-end;margin-top:10px;">
               <button class="btn"
@@ -1413,9 +1413,7 @@ function billingPlanSnapshot(billing = State.billing || deriveBillingState()) {
     return {
       hasConfirmedPlan: true,
       planLabel: billingPlanLabel(billing.plan),
-      amountLabel: billingDetailsSyncing(billing)
-        ? `${billingPriceLabel(billing.plan)} · renewal syncing`
-        : billingPriceLabel(billing.plan),
+      amountLabel: billingPriceLabel(billing.plan),
     };
   }
   return {
@@ -1884,7 +1882,7 @@ function openBillingStatusModal(initialSection = 'overview') {
                     cls: 'btn btn-primary',
                     onclick: 'openPaystackBillingManagement()',
                   })
-                  : '<button class="btn btn-secondary" type="button" disabled>Subscription syncing...</button>')
+                  : '<button class="btn btn-secondary" type="button" disabled>Manage unavailable</button>')
             : !canManagePlan && hasManagedSubscription
               ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
@@ -1916,7 +1914,7 @@ function openBillingStatusModal(initialSection = 'overview') {
                     cls: 'btn btn-primary',
                     onclick: 'openPaystackBillingManagement()',
                   })
-                  : '<button class="btn btn-secondary" type="button" disabled>Subscription syncing...</button>')
+                  : '<button class="btn btn-secondary" type="button" disabled>Manage unavailable</button>')
             : !canManagePlan && hasManagedSubscription
               ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
@@ -1936,7 +1934,7 @@ function openBillingStatusModal(initialSection = 'overview') {
         <div class="card-title">Dates</div>
         <div class="details-grid">
           <div><div class="details-label">Trial Ends</div><div class="details-value">${escapeHtml(trialEndsLabel || 'Not set')}</div></div>
-          <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || (billingDetailsSyncing(billing) ? 'Syncing from Paystack...' : 'Not set'))}</div></div>
+          <div><div class="details-label">Subscription Ends</div><div class="details-value">${escapeHtml(renewsLabel || 'Not set')}</div></div>
         </div>
       </div>
     </div>
