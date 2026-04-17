@@ -1,6 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const DEFAULT_ALLOWED_ORIGIN = "https://familyos-v2.vercel.app";
+const DEFAULT_ALLOWED_ORIGIN = "https://familyoshq.com";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://familyoshq.com",
+  "https://familyos-v2.vercel.app",
+];
 const PAYSTACK_API_BASE = "https://api.paystack.co";
 
 export const FAMILY_BILLING_SELECT =
@@ -47,9 +51,23 @@ export function json(body: unknown, status = 200, origin = DEFAULT_ALLOWED_ORIGI
   });
 }
 
+function allowedOrigins() {
+  const configured = Deno.env.get("ALLOWED_ORIGINS")
+    || Deno.env.get("ALLOWED_ORIGIN")
+    || DEFAULT_ALLOWED_ORIGINS.join(",");
+
+  const origins = configured
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return origins.length ? origins : DEFAULT_ALLOWED_ORIGINS;
+}
+
 export function getAllowedOrigin(req: Request) {
-  const configured = Deno.env.get("ALLOWED_ORIGIN") || DEFAULT_ALLOWED_ORIGIN;
-  const origin = req.headers.get("origin") || configured;
+  const origins = allowedOrigins();
+  const origin = req.headers.get("origin")?.trim() || origins[0] || DEFAULT_ALLOWED_ORIGIN;
+  const configured = origins.includes(origin) ? origin : (origins[0] || DEFAULT_ALLOWED_ORIGIN);
   return { configured, origin };
 }
 

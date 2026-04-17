@@ -8,7 +8,8 @@
  * - Set secrets:
  *   GEMINI_API_KEY
  *   EXPECTED_ANON_KEY
- *   ALLOWED_ORIGIN (optional, defaults to FamilyOS Vercel URL)
+ *   ALLOWED_ORIGIN (optional, supports one origin or a comma-separated list)
+ *   ALLOWED_ORIGINS (optional, comma-separated list)
  *   GEMINI_MODEL (optional)
  *   AI_RATE_LIMIT_WINDOW_MS (optional)
  *   AI_RATE_LIMIT_MAX_ANSWERS (optional)
@@ -18,7 +19,11 @@
  * It protects itself with origin + anon-key checks.
  */
 
-const DEFAULT_ALLOWED_ORIGIN = "https://familyos-v2.vercel.app";
+const DEFAULT_ALLOWED_ORIGIN = "https://familyoshq.com";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://familyoshq.com",
+  "https://familyos-v2.vercel.app",
+];
 const ALLOWED_INSIGHT_TYPES = new Set([
   "finance_alert",
   "task_warning",
@@ -72,9 +77,23 @@ function safeNumber(n: unknown) {
   return typeof n === "number" ? n : Number(n) || 0;
 }
 
+function allowedOrigins() {
+  const configured = Deno.env.get("ALLOWED_ORIGINS")
+    || Deno.env.get("ALLOWED_ORIGIN")
+    || DEFAULT_ALLOWED_ORIGINS.join(",");
+
+  const origins = configured
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return origins.length ? origins : DEFAULT_ALLOWED_ORIGINS;
+}
+
 function getAllowedOrigin(req: Request) {
-  const configured = Deno.env.get("ALLOWED_ORIGIN") || DEFAULT_ALLOWED_ORIGIN;
-  const origin = req.headers.get("origin") || configured;
+  const origins = allowedOrigins();
+  const origin = req.headers.get("origin")?.trim() || origins[0] || DEFAULT_ALLOWED_ORIGIN;
+  const configured = origins.includes(origin) ? origin : (origins[0] || DEFAULT_ALLOWED_ORIGIN);
   return { configured, origin };
 }
 
