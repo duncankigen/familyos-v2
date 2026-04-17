@@ -304,6 +304,8 @@ export function buildBillingUpdate(family: Record<string, any>, eventName: strin
   const customerCode = extractCustomerCode(data) || family.paystack_customer_code || subscriptionDetails?.customer?.customer_code || null;
   const planCode = data?.plan?.plan_code || subscriptionDetails?.plan?.plan_code || family.paystack_plan_code || null;
   const nextPaymentDate = nextPaymentDateFrom(data, subscriptionDetails);
+  const currentPlan = normalizePlan(family.billing_plan);
+  const billingPlan = planCode ? inferPlanFromCode(planCode) : currentPlan;
 
   let billingStatus = family.billing_status || "active";
   if (eventName === "invoice.payment_failed") {
@@ -317,7 +319,7 @@ export function buildBillingUpdate(family: Record<string, any>, eventName: strin
   const payload: Record<string, unknown> = {
     billing_provider: "paystack",
     billing_status: billingStatus,
-    billing_plan: inferPlanFromCode(planCode || family.billing_plan),
+    billing_plan: billingPlan,
     paystack_customer_code: customerCode,
     paystack_subscription_code: subscriptionCode,
     paystack_subscription_email_token: subscriptionDetails?.email_token || data?.email_token || family.paystack_subscription_email_token || null,
