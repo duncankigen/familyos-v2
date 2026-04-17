@@ -866,12 +866,11 @@ function accountCenterSection(section) {
 
   if (section === 'billing') {
     const billing = State.billing || deriveBillingState();
-    const planLabel = billingPlanLabel(billing.plan);
+    const planSnapshot = billingPlanSnapshot(billing);
     const statusLabel = billingStatusLabel(billing.status);
     const tierLabel = billingTierLabel(billing);
     const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
     const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
-    const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
     const isScholarship = billing.accessSource === 'scholarship';
     const canManageBillingRole = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
     const hasManagedSubscription = hasManagedBillingSubscription(billing);
@@ -906,8 +905,8 @@ function accountCenterSection(section) {
             <div class="details-grid">
               <div><div class="details-label">Workspace</div><div class="details-value">${escapeHtml(familyName)}</div></div>
               <div><div class="details-label">Status</div><div class="details-value">${escapeHtml(statusLabel)}</div></div>
-              <div><div class="details-label">Plan</div><div class="details-value">${escapeHtml(planLabel)}</div></div>
-              <div><div class="details-label">Current Price</div><div class="details-value">${amountLabel}</div></div>
+              <div><div class="details-label">Plan</div><div class="details-value">${escapeHtml(planSnapshot.planLabel)}</div></div>
+              <div><div class="details-label">Current Price</div><div class="details-value">${escapeHtml(planSnapshot.amountLabel)}</div></div>
               <div><div class="details-label">Billing Currency</div><div class="details-value">${escapeHtml(billing.currency)}</div></div>
               <div><div class="details-label">Access Source</div><div class="details-value">${escapeHtml(billing.accessSource === 'scholarship' ? 'Scholarship' : 'Billing')}</div></div>
             </div>
@@ -934,10 +933,10 @@ function accountCenterSection(section) {
             </div>
             ${billing.scholarshipNote ? `<div class="account-center-copy" style="margin-top:12px;">${escapeHtml(billing.scholarshipNote)}</div>` : ''}
             ${!isScholarship && !hasManagedSubscription ? `
-              <div class="account-center-copy" style="margin-top:12px;">Subscribe starts monthly or yearly billing in a new tab so the family admin can complete checkout and return here easily.</div>
+              <div class="account-center-copy" style="margin-top:12px;">Choose monthly or yearly to open checkout in a new tab. Your current plan only changes after payment is confirmed.</div>
             ` : ''}
             ${hasManagedSubscription ? `
-              <div class="account-center-copy" style="margin-top:12px;">Manage Subscription opens the subscription page in a new tab so the family admin can review or update billing details.</div>
+              <div class="account-center-copy" style="margin-top:12px;">Manage Subscription opens the billing page in a new tab so the family admin can review billing details or switch plans safely.</div>
             ` : ''}
             ${isScholarship ? `
               <div class="account-center-copy" style="margin-top:12px;">This workspace currently has scholarship-based access rather than a paid subscription.</div>
@@ -1384,10 +1383,38 @@ function billingPlanLabel(plan = 'monthly') {
   return plan === 'yearly' ? 'Yearly' : 'Monthly';
 }
 
+function billingPriceLabel(plan = 'monthly') {
+  return plan === 'yearly' ? 'KES 2,999 / year' : 'KES 299 / month';
+}
+
+function billingPlanSnapshot(billing = State.billing || deriveBillingState()) {
+  const hasConfirmedPlan = hasManagedBillingSubscription(billing);
+  if (billing.accessSource === 'scholarship') {
+    return {
+      hasConfirmedPlan: false,
+      planLabel: 'Scholarship access',
+      amountLabel: 'Sponsored access',
+    };
+  }
+  if (hasConfirmedPlan) {
+    return {
+      hasConfirmedPlan: true,
+      planLabel: billingPlanLabel(billing.plan),
+      amountLabel: billingPriceLabel(billing.plan),
+    };
+  }
+  return {
+    hasConfirmedPlan: false,
+    planLabel: 'Not subscribed yet',
+    amountLabel: 'Choose monthly or yearly',
+  };
+}
+
 function isSubscribedWorkspace(billing = State.billing || deriveBillingState()) {
   return ['active', 'cancelled'].includes(billing?.status)
     && billing?.access === 'active'
-    && billing?.accessSource !== 'scholarship';
+    && billing?.accessSource !== 'scholarship'
+    && Boolean(billing?.subscriptionEndsAt || billing?.subscriptionStartedAt);
 }
 
 function hasManagedBillingSubscription(billing = State.billing || deriveBillingState()) {
@@ -1615,40 +1642,7 @@ function applyBillingReadOnlyState(page, options = {}) {
 }
 
 async function saveWorkspaceBillingPlan(plan) {
-  if (!State.currentFamilyId || !plan) return;
-  const normalizedPlan = plan === 'yearly' ? 'yearly' : 'monthly';
-  const action = `choose-plan-${normalizedPlan}`;
-  const role = String(State.currentProfile?.role || '').toLowerCase();
-  if (!isPlatformAdminUser() && role !== 'admin') {
-    alert('Only a family admin can choose the workspace billing plan.');
-    return;
-  }
-
-  setBillingActionLoading(action);
-  try {
-    const { error } = await DB.client
-      .from('families')
-      .update({ billing_plan: normalizedPlan })
-      .eq('id', State.currentFamilyId);
-
-    if (error) {
-      alert(error.message || 'Unable to update the workspace billing plan right now.');
-      return;
-    }
-
-    State.billing = {
-      ...State.billing,
-      plan: normalizedPlan,
-    };
-    refreshSidebarBillingStatus();
-    if (State.currentPage === 'dashboard' && typeof renderPage === 'function') {
-      renderPage('dashboard');
-    }
-  } finally {
-    clearBillingActionLoading();
-  }
-
-  openBillingStatusModal('plans');
+  return startWorkspaceSubscriptionCheckout(plan);
 }
 
 async function callBillingFunction(functionName, payload = {}) {
@@ -1793,16 +1787,16 @@ async function handleBillingReturnParams() {
 
 function openBillingStatusModal(initialSection = 'overview') {
   const billing = State.billing || deriveBillingState();
-  const planLabel = billingPlanLabel(billing.plan);
+  const planSnapshot = billingPlanSnapshot(billing);
   const statusLabel = billingStatusLabel(billing.status);
   const trialEndsLabel = billingDateLabel(billing.trialEndsAt);
   const renewsLabel = billingDateLabel(billing.subscriptionEndsAt);
-  const amountLabel = billing.plan === 'yearly' ? 'KES 1,000 / year' : 'KES 100 / month';
   const scholarshipEndsLabel = billingDateLabel(billing.scholarshipEndsAt);
-  const yearlySelected = billing.plan === 'yearly';
-  const monthlySelected = !yearlySelected;
   const canManagePlan = isPlatformAdminUser() || String(State.currentProfile?.role || '').toLowerCase() === 'admin';
   const hasManagedSubscription = hasManagedBillingSubscription(billing);
+  const activePlan = hasManagedSubscription ? billing.plan : '';
+  const monthlySelected = activePlan === 'monthly';
+  const yearlySelected = activePlan === 'yearly';
   const canStartCheckout = canManagePlan && !hasManagedSubscription && billing.accessSource !== 'scholarship';
   const summaryLine = billing.accessSource === 'scholarship'
     ? `This workspace is active through a scholarship${scholarshipEndsLabel ? ` until ${scholarshipEndsLabel}` : ''}.`
@@ -1812,7 +1806,9 @@ function openBillingStatusModal(initialSection = 'overview') {
         ? `This subscription has been cancelled and stays active${renewsLabel ? ` until ${renewsLabel}` : ' until the current paid period ends'}.`
       : billing.access === 'restricted'
         ? 'Your workspace is currently restricted to read-only pages until billing is renewed.'
-        : 'Your workspace billing is active.';
+        : hasManagedSubscription
+          ? 'Your workspace billing is active.'
+          : 'Choose monthly or yearly when you are ready to start paid billing for this workspace.';
   const planIntro = initialSection === 'plans'
     ? 'Choose the workspace plan you want to use for this family workspace.'
     : summaryLine;
@@ -1827,26 +1823,27 @@ function openBillingStatusModal(initialSection = 'overview') {
         <div class="card">
           <div class="card-title">Current Billing</div>
           <div class="details-grid">
-            <div><div class="details-label">Plan</div><div class="details-value">${escapeHtml(planLabel)}</div></div>
+            <div><div class="details-label">Plan</div><div class="details-value">${escapeHtml(planSnapshot.planLabel)}</div></div>
             <div><div class="details-label">Billing Currency</div><div class="details-value">${escapeHtml(billing.currency)}</div></div>
-            <div><div class="details-label">Current Price</div><div class="details-value">${amountLabel}</div></div>
+            <div><div class="details-label">Current Price</div><div class="details-value">${escapeHtml(planSnapshot.amountLabel)}</div></div>
             <div><div class="details-label">Status</div><div class="details-value">${escapeHtml(statusLabel)}</div></div>
           </div>
         </div>
         <div class="card">
           <div class="card-title">What Happens Next</div>
           <div class="account-center-list">
-            <div>Monthly billing will be KES 100. Yearly billing will be KES 1,000.</div>
+            <div>Monthly billing is KES 299. Yearly billing is KES 2,999.</div>
             <div>New workspaces start with a 7-day free trial.</div>
             <div>Starting billing opens a secure checkout page in a new tab.</div>
+            <div>Your current plan does not change until billing is confirmed.</div>
             <div>If billing lapses, core pages stay available in read-only mode until full access is restored.</div>
           </div>
         </div>
       </div>
       <div class="billing-plan-grid">
         <div class="billing-plan-card ${monthlySelected ? 'is-selected' : ''}">
-          <div class="billing-plan-tag">Monthly</div>
-          <div class="billing-plan-price">KES 100 <span>/ month</span></div>
+          <div class="billing-plan-tag">${monthlySelected ? 'Current plan' : 'Monthly'}</div>
+          <div class="billing-plan-price">KES 299 <span>/ month</span></div>
           <div class="billing-plan-copy">Flexible month-to-month billing after the 7-day trial ends.</div>
           <div class="billing-plan-list">
             <div>Good for families starting with lighter usage</div>
@@ -1860,22 +1857,26 @@ function openBillingStatusModal(initialSection = 'overview') {
               cls: 'btn btn-primary',
               onclick: "startWorkspaceSubscriptionCheckout('monthly').catch((error) => alert(error?.message || 'Unable to start monthly billing.'))",
             })
-            : canManagePlan
-              ? billingActionButton({
-                label: monthlySelected ? 'Current plan' : 'Choose monthly',
-                loadingLabel: 'Saving...',
-                action: 'choose-plan-monthly',
-                cls: `btn ${monthlySelected ? 'btn-secondary' : 'btn-primary'}`,
-                onclick: "saveWorkspaceBillingPlan('monthly')",
-              })
+            : hasManagedSubscription && canManagePlan
+              ? (monthlySelected
+                ? '<button class="btn btn-secondary" type="button" disabled>Current plan</button>'
+                : billingActionButton({
+                  label: 'Manage to switch',
+                  loadingLabel: 'Opening...',
+                  action: 'manage-subscription',
+                  cls: 'btn btn-primary',
+                  onclick: 'openPaystackBillingManagement()',
+                }))
+            : !canManagePlan && hasManagedSubscription
+              ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
         </div>
         <div class="billing-plan-card is-recommended ${yearlySelected ? 'is-selected' : ''}">
-          <div class="billing-plan-tag">Recommended</div>
-          <div class="billing-plan-price">KES 1,000 <span>/ year</span></div>
+          <div class="billing-plan-tag">${yearlySelected ? 'Current plan' : 'Recommended'}</div>
+          <div class="billing-plan-price">KES 2,999 <span>/ year</span></div>
           <div class="billing-plan-copy">Best value for active families that use the workspace throughout the year.</div>
           <div class="billing-plan-list">
-            <div>Save KES 200 compared with paying monthly for a full year</div>
+            <div>Save KES 589 compared with paying monthly for a full year</div>
             <div>Fewer billing interruptions for the family team</div>
           </div>
           ${canStartCheckout
@@ -1886,14 +1887,18 @@ function openBillingStatusModal(initialSection = 'overview') {
               cls: 'btn btn-primary',
               onclick: "startWorkspaceSubscriptionCheckout('yearly').catch((error) => alert(error?.message || 'Unable to start yearly billing.'))",
             })
-            : canManagePlan
-              ? billingActionButton({
-                label: yearlySelected ? 'Current plan' : 'Choose yearly',
-                loadingLabel: 'Saving...',
-                action: 'choose-plan-yearly',
-                cls: `btn ${yearlySelected ? 'btn-secondary' : 'btn-primary'}`,
-                onclick: "saveWorkspaceBillingPlan('yearly')",
-              })
+            : hasManagedSubscription && canManagePlan
+              ? (yearlySelected
+                ? '<button class="btn btn-secondary" type="button" disabled>Current plan</button>'
+                : billingActionButton({
+                  label: 'Manage to switch',
+                  loadingLabel: 'Opening...',
+                  action: 'manage-subscription',
+                  cls: 'btn btn-primary',
+                  onclick: 'openPaystackBillingManagement()',
+                }))
+            : !canManagePlan && hasManagedSubscription
+              ? '<button class="btn btn-secondary" type="button" disabled>Ask admin to switch</button>'
               : ''}
         </div>
       </div>
@@ -2048,6 +2053,11 @@ async function handleAuthStateChange(event, session) {
   }
 
   State.currentUser = nextUser;
+
+  if (event === 'PASSWORD_RECOVERY') {
+    Auth.enterRecoveryMode(nextUser?.email || '');
+    return;
+  }
 
   // Supabase can emit auth events repeatedly for the same browser session.
   if (event === 'TOKEN_REFRESHED') return;

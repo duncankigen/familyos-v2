@@ -3,6 +3,10 @@
  * Platform admin workspace.
  */
 
+const AdminWorkspace = {
+  activeTab: 'overview',
+};
+
 function adminPriorityBadge(priority) {
   const tone = {
     low: 'b-gray',
@@ -750,6 +754,137 @@ function adminPageActionsHtml() {
     </div>`;
 }
 
+function adminTabButton(key, label, count = null) {
+  const isActive = AdminWorkspace.activeTab === key;
+  return `
+    <button type="button"
+      class="admin-tab-btn ${isActive ? 'is-active' : ''}"
+      onclick="openAdminTab('${key}')">
+      <span>${label}</span>
+      ${count === null ? '' : `<span class="admin-tab-count">${count}</span>`}
+    </button>`;
+}
+
+function openAdminTab(tab) {
+  AdminWorkspace.activeTab = ['overview', 'support', 'families', 'users'].includes(tab) ? tab : 'overview';
+  if (State.adminSnapshot?.tickets?.length || State.adminSnapshot?.families?.length || State.adminSnapshot?.users?.length) {
+    renderAdminFromSnapshot();
+    return;
+  }
+  renderAdmin();
+}
+
+function renderAdminOverview(tickets, families, users) {
+  const openTickets = tickets.filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length;
+  const activeUsers = users.filter((user) => user.is_active).length;
+  const scholarshipFamilies = families.filter((family) => adminFamilyBillingState(family).accessSource === 'scholarship').length;
+
+  return `
+    <div class="account-center-grid">
+      <div class="card admin-list-card">
+        <div class="card-title">Support Snapshot</div>
+        <div class="account-center-copy">Focus here when the platform needs immediate intervention across workspaces.</div>
+        <div class="account-center-list">
+          <div>${openTickets} tickets are currently open or in progress.</div>
+          <div>${tickets.length ? `Latest issue: ${escapeHtml(tickets[0].subject || 'Untitled ticket')}.` : 'No tickets have been submitted yet.'}</div>
+        </div>
+      </div>
+      <div class="card admin-list-card">
+        <div class="card-title">Workspace Snapshot</div>
+        <div class="account-center-copy">Families and sponsorship status from the current admin dataset.</div>
+        <div class="account-center-list">
+          <div>${families.length} family workspaces are loaded into this console.</div>
+          <div>${scholarshipFamilies} workspaces currently use scholarship access.</div>
+        </div>
+      </div>
+      <div class="card admin-list-card">
+        <div class="card-title">Account Snapshot</div>
+        <div class="account-center-copy">User account health and activation coverage.</div>
+        <div class="account-center-list">
+          <div>${activeUsers} accounts are active right now.</div>
+          <div>${Math.max(0, users.length - activeUsers)} accounts are currently inactive.</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderAdminPanel(tickets, families, users) {
+  if (AdminWorkspace.activeTab === 'support') {
+    return `
+      <div class="card admin-list-card">
+        <div class="admin-section-head">
+          <div>
+            <div class="card-title">Support Inbox</div>
+            <div class="admin-section-sub">Recent issues across family workspaces.</div>
+          </div>
+          <span class="badge b-red">${tickets.filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length} active</span>
+        </div>
+        ${adminSupportTable(tickets)}
+      </div>`;
+  }
+
+  if (AdminWorkspace.activeTab === 'families') {
+    return `
+      <div class="card admin-list-card">
+        <div class="admin-section-head">
+          <div>
+            <div class="card-title">Families</div>
+            <div class="admin-section-sub">Workspace-level visibility for support and operations.</div>
+          </div>
+          <span class="badge b-blue">${families.length} loaded</span>
+        </div>
+        ${adminFamilyTable(families, users, tickets)}
+      </div>`;
+  }
+
+  if (AdminWorkspace.activeTab === 'users') {
+    return `
+      <div class="card admin-list-card">
+        <div class="admin-section-head">
+          <div>
+            <div class="card-title">Users</div>
+            <div class="admin-section-sub">Account state, role coverage, and family placement in row view.</div>
+          </div>
+          <span class="badge b-green">${users.filter((user) => user.is_active).length} active</span>
+        </div>
+        ${adminUserTable(users)}
+      </div>`;
+  }
+
+  return renderAdminOverview(tickets, families, users);
+}
+
+function renderAdminFromSnapshot() {
+  const tickets = State.adminSnapshot?.tickets || [];
+  const families = State.adminSnapshot?.families || [];
+  const users = State.adminSnapshot?.users || [];
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="content admin-page">
+      <div class="card admin-hero-card">
+        <div class="account-center-hero ai-red">
+          <div>
+            <div class="account-center-hero-title">Platform Control</div>
+            <div class="account-center-hero-copy">
+              Review cross-family support issues, track user account health, and inspect workspace activity from one operational console.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${adminOverviewMetrics(tickets, families, users)}
+
+      <div class="admin-tab-bar">
+        ${adminTabButton('overview', 'Overview')}
+        ${adminTabButton('support', 'Support', tickets.filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length)}
+        ${adminTabButton('families', 'Families', families.length)}
+        ${adminTabButton('users', 'Users', users.length)}
+      </div>
+
+      ${renderAdminPanel(tickets, families, users)}
+    </div>`;
+}
+
 async function renderAdmin() {
   setTopbar('Admin', adminPageActionsHtml());
 
@@ -767,57 +902,8 @@ async function renderAdmin() {
   }
 
   try {
-    const { tickets, families, users } = await adminLoadData();
-    document.getElementById('page-content').innerHTML = `
-      <div class="content admin-page">
-        <div class="card admin-hero-card">
-          <div class="account-center-hero ai-red">
-            <div>
-              <div class="account-center-hero-title">Platform Control</div>
-              <div class="account-center-hero-copy">
-                Review cross-family support issues, track user account health, and inspect workspace activity from one operational console.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        ${adminOverviewMetrics(tickets, families, users)}
-
-        <div class="admin-sections">
-          <div class="card admin-list-card">
-            <div class="admin-section-head">
-              <div>
-                <div class="card-title">Support Inbox</div>
-                <div class="admin-section-sub">Recent issues across family workspaces.</div>
-              </div>
-              <span class="badge b-red">${tickets.filter((ticket) => ['open', 'in_progress'].includes(ticket.status)).length} active</span>
-            </div>
-            ${adminSupportTable(tickets)}
-          </div>
-
-          <div class="card admin-list-card">
-            <div class="admin-section-head">
-              <div>
-                <div class="card-title">Families</div>
-                <div class="admin-section-sub">Workspace-level visibility for support and operations.</div>
-              </div>
-              <span class="badge b-blue">${families.length} loaded</span>
-            </div>
-            ${adminFamilyTable(families, users, tickets)}
-          </div>
-        </div>
-
-        <div class="card admin-list-card">
-          <div class="admin-section-head">
-            <div>
-              <div class="card-title">Users</div>
-              <div class="admin-section-sub">Account state, role coverage, and family placement in row view.</div>
-            </div>
-            <span class="badge b-green">${users.filter((user) => user.is_active).length} active</span>
-          </div>
-          ${adminUserTable(users)}
-        </div>
-      </div>`;
+    await adminLoadData();
+    renderAdminFromSnapshot();
   } catch (error) {
     console.warn('[Admin] Failed to load platform admin data:', error);
     document.getElementById('page-content').innerHTML = `

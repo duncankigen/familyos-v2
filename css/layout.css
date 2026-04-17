@@ -314,6 +314,28 @@ a { color: var(--accent); text-decoration: none; }
   border-left: 3px solid var(--accent);
 }
 .setup-step strong { display: block; margin-bottom: 2px; }
+.auth-inline-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: -2px 0 14px;
+}
+.btn-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.btn-link[disabled] {
+  color: var(--text3);
+  cursor: not-allowed;
+}
 
 /* ── Utility grids ────────────────────────────── */
 .g2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
@@ -354,4 +376,8 @@ a { color: var(--accent); text-decoration: none; }
   .billing-readonly-note { margin: 0 14px 14px; }
   .dashboard-billing-banner { align-items: start; flex-direction: column; }
   .billing-plan-grid { grid-template-columns: 1fr; }
+  .auth-inline-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

@@ -17,7 +17,7 @@ function checkoutReference(familyId: string) {
 }
 
 function checkoutAmount(plan: string) {
-  return plan === "yearly" ? "100000" : "10000";
+  return plan === "yearly" ? "299900" : "29900";
 }
 
 Deno.serve(async (req) => {
@@ -67,7 +67,6 @@ Deno.serve(async (req) => {
 
     await updateFamilyBilling(context.admin, context.family.id, {
       billing_provider: "paystack",
-      billing_plan: plan,
       paystack_plan_code: planCode,
       paystack_last_reference: reference,
     });
