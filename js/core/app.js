@@ -1373,6 +1373,7 @@ function deriveBillingState(family = {}) {
     plan,
     currency,
     country,
+    paystackSubscriptionCode: family.paystack_subscription_code || null,
     trialStartedAt: family.trial_started_at || null,
     trialEndsAt,
     subscriptionStartedAt: family.subscription_started_at || null,
@@ -1435,7 +1436,7 @@ function hasManagedBillingSubscription(billing = State.billing || deriveBillingS
 }
 
 function canOpenManagedBillingPortal(billing = State.billing || deriveBillingState()) {
-  return hasManagedBillingSubscription(billing) && !billingDetailsSyncing(billing);
+  return hasManagedBillingSubscription(billing) && Boolean(billing?.paystackSubscriptionCode);
 }
 
 function billingTierLabel(billing = State.billing || deriveBillingState()) {
@@ -1944,7 +1945,7 @@ function openBillingStatusModal(initialSection = 'overview') {
 }
 
 async function fetchFamilyWorkspaceSnapshot(familyId) {
-  const billingFields = 'name,billing_status,billing_plan,billing_currency,billing_country,trial_started_at,trial_ends_at,subscription_started_at,subscription_ends_at,scholarship_active,scholarship_started_at,scholarship_ends_at,scholarship_note';
+  const billingFields = 'name,billing_status,billing_plan,billing_currency,billing_country,trial_started_at,trial_ends_at,subscription_started_at,subscription_ends_at,paystack_subscription_code,scholarship_active,scholarship_started_at,scholarship_ends_at,scholarship_note';
   let { data, error } = await DB.client
     .from('families')
     .select(billingFields)
