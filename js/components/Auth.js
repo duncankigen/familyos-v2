@@ -99,6 +99,7 @@ const Auth = {
     const forgotActions = document.getElementById('auth-forgot-actions');
     const forgotLink = document.getElementById('auth-forgot-link');
     const resendLink = document.getElementById('auth-resend-link');
+    const legalConsent = document.getElementById('auth-legal-consent');
     const guide = document.getElementById('auth-guide');
     const submitBtn = document.getElementById('auth-submit-btn');
     const spinner = document.getElementById('auth-btn-spinner');
@@ -113,6 +114,7 @@ const Auth = {
     if (emailGroup) emailGroup.style.display = isRecovery ? 'none' : 'block';
     if (googleBtn) googleBtn.style.display = isRecovery ? 'none' : 'block';
     if (forgotActions) forgotActions.style.display = (!isSignUp && !isRecovery) ? 'flex' : 'none';
+    if (legalConsent) legalConsent.style.display = isSignUp ? 'block' : 'none';
     if (forgotLink) forgotLink.disabled = isBusy;
 
     if (passwordInput) {
@@ -225,6 +227,10 @@ const Auth = {
 
   async signInWithGoogle() {
     if (this._isBusy) return;
+    if (this.isSignUpMode() && !document.getElementById('auth-accept-legal')?.checked) {
+      showErr('auth-err', 'Please agree to the Terms of Use and Privacy Policy before creating an account.');
+      return;
+    }
     this.clearFeedback();
     this.setBusy(true);
 
@@ -314,9 +320,14 @@ const Auth = {
       firstName = document.getElementById('auth-first-name')?.value.trim() || '';
       lastName = document.getElementById('auth-last-name')?.value.trim() || '';
       fullName = this.buildFullName(firstName, lastName);
+      const acceptedLegal = Boolean(document.getElementById('auth-accept-legal')?.checked);
 
       if (!firstName || !lastName) {
         showErr('auth-err', 'Please enter both first and last name.');
+        return;
+      }
+      if (!acceptedLegal) {
+        showErr('auth-err', 'Please agree to the Terms of Use and Privacy Policy before creating an account.');
         return;
       }
       if (password.length < 8) {

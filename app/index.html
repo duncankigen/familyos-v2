@@ -69,6 +69,13 @@
           <input id="auth-password-confirm" class="form-input" type="password" placeholder="••••••••" autocomplete="new-password" />
         </div>
 
+        <div id="auth-legal-consent" class="auth-legal-check" style="display:none;">
+          <label class="auth-check-label" for="auth-accept-legal">
+            <input id="auth-accept-legal" type="checkbox" />
+            <span>I agree to the <a href="../terms.html" target="_blank" rel="noopener">Terms of Use</a> and <a href="../privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+          </label>
+        </div>
+
         <div id="auth-guide" class="setup-step" style="display:none;"></div>
 
         <div id="auth-forgot-actions" class="auth-inline-actions" style="display:none;">
@@ -88,6 +95,11 @@
         <p id="auth-status" style="color:var(--text2);font-size:12px;margin-bottom:8px;display:none;"></p>
         <p style="text-align:center;font-size:12px;color:var(--text3);">
           <a href="#" id="auth-toggle" onclick="Auth.toggleMode(event)">Create an account</a>
+        </p>
+        <p class="auth-legal-links">
+          <a href="../privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+          <span>·</span>
+          <a href="../terms.html" target="_blank" rel="noopener">Terms of Use</a>
         </p>
       </form>
     </div>

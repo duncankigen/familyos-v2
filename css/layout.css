@@ -321,6 +321,34 @@ a { color: var(--accent); text-decoration: none; }
   gap: 12px;
   margin: -2px 0 14px;
 }
+.auth-legal-check {
+  margin: 2px 0 14px;
+}
+.auth-check-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.auth-check-label input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.auth-check-label a,
+.auth-legal-links a {
+  color: var(--accent);
+}
+.auth-legal-links {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text3);
+}
+.auth-legal-links span {
+  margin: 0 8px;
+}
 .btn-link {
   border: 0;
   background: transparent;
@@ -379,5 +407,8 @@ a { color: var(--accent); text-decoration: none; }
   .auth-inline-actions {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .auth-check-label {
+    gap: 8px;
   }
 }
