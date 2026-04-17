@@ -188,6 +188,35 @@ export async function getFamilyBillingSnapshot(admin: ReturnType<typeof createCl
   return data;
 }
 
+function billingDetailsReady(family: Record<string, any> | null | undefined) {
+  return Boolean(
+    family?.paystack_subscription_code
+    || family?.subscription_ends_at,
+  );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function waitForBillingDetails(
+  admin: ReturnType<typeof createClient>,
+  familyId: string,
+  attempts = 6,
+  delayMs = 1200,
+) {
+  let family = await getFamilyBillingSnapshot(admin, familyId);
+  if (billingDetailsReady(family)) return family;
+
+  for (let index = 0; index < attempts; index += 1) {
+    await delay(delayMs);
+    family = await getFamilyBillingSnapshot(admin, familyId);
+    if (billingDetailsReady(family)) return family;
+  }
+
+  return family;
+}
+
 export function extractCustomerCode(data: any) {
   return data?.customer?.customer_code || data?.customer_code || data?.customer?.code || null;
 }

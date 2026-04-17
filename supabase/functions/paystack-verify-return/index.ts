@@ -10,6 +10,7 @@ import {
   paystackRequest,
   requireBillingManager,
   updateFamilyBilling,
+  waitForBillingDetails,
 } from "../_shared/paystack.ts";
 
 Deno.serve(async (req) => {
@@ -52,10 +53,13 @@ Deno.serve(async (req) => {
     const update = buildBillingUpdate(context.family, "charge.success", transaction, subscriptionDetails);
 
     await updateFamilyBilling(context.admin, context.family.id, update);
-    const family = await getFamilyBillingSnapshot(context.admin, context.family.id);
+    const family = await waitForBillingDetails(context.admin, context.family.id);
+    const detailsReady = Boolean(family?.paystack_subscription_code || family?.subscription_ends_at);
 
     return json({
-      message: "Workspace subscription payment confirmed.",
+      message: detailsReady
+        ? "Workspace subscription payment confirmed."
+        : "Payment confirmed. Subscription details are still syncing from Paystack. Refresh shortly if dates are not visible yet.",
       family,
     }, 200, configured);
   } catch (error) {
