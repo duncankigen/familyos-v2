@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
     return json({
       message: detailsReady
         ? "Workspace subscription payment confirmed."
-        : "Payment confirmed. Subscription details are still syncing from Paystack. Refresh shortly if dates are not visible yet.",
+        : "Payment confirmed. Some billing details are not available yet. Refresh shortly if dates are missing.",
       family,
     }, 200, configured);
   } catch (error) {

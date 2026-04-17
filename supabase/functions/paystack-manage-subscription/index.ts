@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
         && !latestFamily?.subscription_ends_at;
       return json({
         error: isSyncing
-          ? "Payment is confirmed, but Paystack is still syncing the subscription management link. Please retry shortly."
+          ? "Payment is confirmed, but the subscription management link is not available yet. Please retry shortly."
           : "This workspace does not have an active Paystack subscription yet.",
       }, isSyncing ? 409 : 400, configured);
     }

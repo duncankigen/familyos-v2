@@ -217,18 +217,95 @@ export async function waitForBillingDetails(
   return family;
 }
 
+function findNestedValue(data: any, keys: string[]) {
+  const visited = new WeakSet<object>();
+
+  function walk(value: any): unknown {
+    if (value == null) return null;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item);
+        if (found != null && String(found).trim() !== "") return found;
+      }
+      return null;
+    }
+    if (typeof value !== "object") return null;
+    if (visited.has(value)) return null;
+    visited.add(value);
+
+    for (const key of keys) {
+      const direct = value?.[key];
+      if (direct != null && String(direct).trim() !== "") {
+        return direct;
+      }
+    }
+
+    for (const nested of Object.values(value)) {
+      const found = walk(nested);
+      if (found != null && String(found).trim() !== "") return found;
+    }
+
+    return null;
+  }
+
+  return walk(data);
+}
+
 export function extractCustomerCode(data: any) {
-  return data?.customer?.customer_code || data?.customer_code || data?.customer?.code || null;
+  return data?.customer?.customer_code
+    || data?.customer?.customerCode
+    || data?.customer_code
+    || data?.customerCode
+    || data?.customer?.code
+    || findNestedValue(data, ["customer_code", "customerCode"])
+    || null;
 }
 
 export function extractSubscriptionCode(data: any) {
-  return data?.subscription?.subscription_code || data?.subscription_code || data?.subscription?.code || null;
+  return data?.subscription?.subscription_code
+    || data?.subscription?.subscriptionCode
+    || data?.subscription_code
+    || data?.subscriptionCode
+    || data?.subscription?.code
+    || findNestedValue(data, ["subscription_code", "subscriptionCode"])
+    || null;
 }
 
 export function extractFamilyId(data: any) {
   return data?.metadata?.family_id
+    || data?.metadata?.familyId
     || data?.customer?.metadata?.family_id
+    || data?.customer?.metadata?.familyId
     || data?.subscription?.metadata?.family_id
+    || data?.subscription?.metadata?.familyId
+    || findNestedValue(data, ["family_id", "familyId"])
+    || null;
+}
+
+export function extractReference(data: any) {
+  return data?.reference
+    || data?.trxref
+    || data?.transaction_reference
+    || data?.transactionReference
+    || findNestedValue(data, ["reference", "trxref", "transaction_reference", "transactionReference"])
+    || null;
+}
+
+export function extractPlanCode(data: any) {
+  return data?.plan?.plan_code
+    || data?.plan?.planCode
+    || data?.plan_code
+    || data?.planCode
+    || findNestedValue(data, ["plan_code", "planCode"])
+    || null;
+}
+
+export function extractEmailToken(data: any) {
+  return data?.email_token
+    || data?.emailToken
+    || data?.subscription?.email_token
+    || data?.subscription?.emailToken
+    || findNestedValue(data, ["email_token", "emailToken"])
     || null;
 }
 
@@ -259,7 +336,7 @@ export async function findFamilyForWebhook(admin: ReturnType<typeof createClient
     if (data) return data;
   }
 
-  const reference = String(payload?.data?.reference || "").trim();
+  const reference = String(extractReference(payload?.data) || "").trim();
   if (reference) {
     const { data } = await admin
       .from("families")
@@ -267,6 +344,29 @@ export async function findFamilyForWebhook(admin: ReturnType<typeof createClient
       .eq("paystack_last_reference", reference)
       .maybeSingle();
     if (data) return data;
+  }
+
+  return null;
+}
+
+export async function waitForWebhookFamilyMatch(
+  admin: ReturnType<typeof createClient>,
+  payload: any,
+  attempts = 4,
+  delayMs = 700,
+) {
+  let family = await findFamilyForWebhook(admin, payload);
+  if (family) return family;
+
+  const eventName = String(payload?.event || "").trim().toLowerCase();
+  const customerCode = extractCustomerCode(payload?.data);
+  const shouldRetry = Boolean(customerCode) && ["subscription.create", "invoice.create", "invoice.update"].includes(eventName);
+  if (!shouldRetry) return null;
+
+  for (let index = 0; index < attempts; index += 1) {
+    await delay(delayMs);
+    family = await findFamilyForWebhook(admin, payload);
+    if (family) return family;
   }
 
   return null;
@@ -284,8 +384,12 @@ export async function fetchSubscriptionDetails(subscriptionCode: string | null |
 
 function nextPaymentDateFrom(data: any, subscriptionDetails: any) {
   return subscriptionDetails?.next_payment_date
+    || subscriptionDetails?.nextPaymentDate
     || data?.next_payment_date
+    || data?.nextPaymentDate
     || data?.subscription?.next_payment_date
+    || data?.subscription?.nextPaymentDate
+    || findNestedValue(data, ["next_payment_date", "nextPaymentDate"])
     || null;
 }
 
@@ -300,9 +404,21 @@ function startedAtFrom(data: any, subscriptionDetails: any, currentValue: unknow
 }
 
 export function buildBillingUpdate(family: Record<string, any>, eventName: string, data: any, subscriptionDetails: any) {
-  const subscriptionCode = extractSubscriptionCode(data) || family.paystack_subscription_code || subscriptionDetails?.subscription_code || null;
-  const customerCode = extractCustomerCode(data) || family.paystack_customer_code || subscriptionDetails?.customer?.customer_code || null;
-  const planCode = data?.plan?.plan_code || subscriptionDetails?.plan?.plan_code || family.paystack_plan_code || null;
+  const subscriptionCode = extractSubscriptionCode(data)
+    || family.paystack_subscription_code
+    || subscriptionDetails?.subscription_code
+    || subscriptionDetails?.subscriptionCode
+    || null;
+  const customerCode = extractCustomerCode(data)
+    || family.paystack_customer_code
+    || subscriptionDetails?.customer?.customer_code
+    || subscriptionDetails?.customer?.customerCode
+    || null;
+  const planCode = extractPlanCode(data)
+    || subscriptionDetails?.plan?.plan_code
+    || subscriptionDetails?.plan?.planCode
+    || family.paystack_plan_code
+    || null;
   const nextPaymentDate = nextPaymentDateFrom(data, subscriptionDetails);
   const currentPlan = normalizePlan(family.billing_plan);
   const billingPlan = planCode ? inferPlanFromCode(planCode) : currentPlan;
@@ -322,9 +438,13 @@ export function buildBillingUpdate(family: Record<string, any>, eventName: strin
     billing_plan: billingPlan,
     paystack_customer_code: customerCode,
     paystack_subscription_code: subscriptionCode,
-    paystack_subscription_email_token: subscriptionDetails?.email_token || data?.email_token || family.paystack_subscription_email_token || null,
+    paystack_subscription_email_token: subscriptionDetails?.email_token
+      || subscriptionDetails?.emailToken
+      || extractEmailToken(data)
+      || family.paystack_subscription_email_token
+      || null,
     paystack_plan_code: planCode,
-    paystack_last_reference: data?.reference || family.paystack_last_reference || null,
+    paystack_last_reference: extractReference(data) || family.paystack_last_reference || null,
   };
 
   if (billingStatus === "active") {
