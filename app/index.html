@@ -83,13 +83,18 @@
           <button id="auth-resend-link" type="button" class="btn-link" onclick="Auth.handleForgotPassword(event, true)" style="display:none;">Resend reset email</button>
         </div>
 
-        <button id="auth-google-btn" type="button" class="btn btn-secondary" style="width:100%;margin-bottom:10px;" onclick="Auth.signInWithGoogle()">
-          Continue with Google
-        </button>
-
         <button id="auth-submit-btn" type="submit" class="btn btn-primary btn-inline" style="width:100%;margin-bottom:10px;">
           <span id="auth-btn-spinner" class="btn-spinner" style="display:none;" aria-hidden="true"></span>
           <span id="auth-btn-text">Sign In</span>
+        </button>
+        <div id="auth-divider" style="display:flex;align-items:center;gap:10px;margin:4px 0 10px;">
+          <span style="flex:1;height:1px;background:var(--line);"></span>
+          <span style="font-size:12px;color:var(--text3);text-transform:lowercase;">or</span>
+          <span style="flex:1;height:1px;background:var(--line);"></span>
+        </div>
+
+        <button id="auth-google-btn" type="button" class="btn btn-secondary" style="width:100%;margin-bottom:10px;" onclick="Auth.signInWithGoogle()">
+          Continue with Google
         </button>
         <p id="auth-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none;"></p>
         <p id="auth-status" style="color:var(--text2);font-size:12px;margin-bottom:8px;display:none;"></p>
