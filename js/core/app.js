@@ -678,7 +678,7 @@ async function hydrateAdminPanel() {
   const [{ data: tickets, error: ticketError }, { data: families, error: familyError }, { data: users, error: userError }] = await Promise.all([
     DB.client.from('support_tickets').select('id,family_id,submitted_by,category,subject,message,status,priority,admin_notes,created_at,updated_at').order('created_at', { ascending: false }).limit(10),
     DB.client.from('families').select('id,name,description,created_at').order('created_at', { ascending: false }).limit(12),
-    DB.client.from('users').select('id,full_name,role,is_active,family_id,created_at').order('created_at', { ascending: false }).limit(20),
+    DB.client.from('users').select('id,full_name,email,role,is_active,family_id,created_at').order('created_at', { ascending: false }).limit(20),
   ]);
 
   if (ticketError || familyError || userError) {
@@ -757,6 +757,7 @@ async function hydrateAdminPanel() {
           <div style="min-width:0;">
             <div style="font-size:13px;font-weight:700;">${escapeHtml(member.full_name || 'Unnamed user')}</div>
             <div style="font-size:12px;color:var(--text3);">${escapeHtml(familyNameById[member.family_id] || 'No family linked')} · ${escapeHtml(member.role || 'member')}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:4px;">${escapeHtml(member.email || 'Email not available')}</div>
             <div style="font-size:12px;color:var(--text3);margin-top:4px;">Created ${ago(member.created_at)}</div>
           </div>
           <span class="badge ${member.is_active ? 'b-green' : 'b-gray'}">${member.is_active ? 'active' : 'inactive'}</span>

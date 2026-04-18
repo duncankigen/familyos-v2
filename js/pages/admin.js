@@ -314,7 +314,7 @@ function adminUserTable(users) {
             <tr>
               <td>
                 <div class="admin-row-title">${escapeHtml(user.full_name || 'Unnamed user')}</div>
-                <div class="admin-row-meta">${user.id === State.uid ? 'Current signed-in platform admin' : 'FamilyOS account'}</div>
+                <div class="admin-row-meta">${escapeHtml(user.email || (user.id === State.uid ? 'Current signed-in platform admin' : 'FamilyOS account'))}</div>
               </td>
               <td>${roleBadge(user.role || 'member')}</td>
               <td>${escapeHtml(adminFamilyName(user.family_id))}</td>
@@ -340,11 +340,12 @@ function adminUserTable(users) {
           <div class="admin-mobile-head">
             <div>
               <div class="admin-row-title">${escapeHtml(user.full_name || 'Unnamed user')}</div>
-              <div class="admin-row-meta">${user.id === State.uid ? 'Current signed-in platform admin' : 'FamilyOS account'}</div>
+              <div class="admin-row-meta">${escapeHtml(user.email || (user.id === State.uid ? 'Current signed-in platform admin' : 'FamilyOS account'))}</div>
             </div>
             ${adminStatusBadge(Boolean(user.is_active))}
           </div>
           <div class="admin-mobile-meta">
+            ${adminMetaLine('Email', escapeHtml(user.email || 'Not available'))}
             ${adminMetaLine('Role', roleBadge(user.role || 'member'))}
             ${adminMetaLine('Family', escapeHtml(adminFamilyName(user.family_id)))}
             ${adminMetaLine('Created', `<span>${fmtDate(user.created_at)}</span><span class="admin-mobile-meta-sub">${ago(user.created_at)}</span>`)}
@@ -374,7 +375,7 @@ async function adminLoadData() {
       .limit(50),
     DB.client
       .from('users')
-      .select('id,full_name,role,is_active,family_id,created_at')
+      .select('id,full_name,email,role,is_active,family_id,created_at')
       .order('created_at', { ascending: false })
       .limit(100),
   ]);
@@ -634,6 +635,10 @@ function openAdminUserAccount(userId) {
       <div class="card">
         <div class="card-title">Account summary</div>
         <div class="details-grid">
+          <div>
+            <div class="details-label">Email</div>
+            <div class="details-value">${escapeHtml(user.email || 'Not available')}</div>
+          </div>
           <div>
             <div class="details-label">Status</div>
             <div class="details-value">${user.is_active ? 'Active' : 'Inactive'}</div>
