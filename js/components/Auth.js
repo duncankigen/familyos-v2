@@ -10,6 +10,7 @@ const Auth = {
   _pendingResetEmail: '',
   _lastResetEmailAt: 0,
   _resetCooldownMs: 30000,
+  _canonicalAppUrl: 'https://familyoshq.com/app/',
 
   initFromLocation() {
     const params = new URLSearchParams(window.location.search);
@@ -26,7 +27,9 @@ const Auth = {
   },
 
   buildRedirectUrl(mode = 'signin') {
-    const url = new URL(window.location.href);
+    const fallbackUrl = new URL(window.location.href);
+    const base = this._canonicalAppUrl || `${fallbackUrl.origin}/app/`;
+    const url = new URL(base);
     url.searchParams.set('mode', mode);
     ['billing', 'reference', 'trxref'].forEach((key) => url.searchParams.delete(key));
     url.hash = '';
