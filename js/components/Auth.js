@@ -302,6 +302,7 @@ const Auth = {
         this._pendingResetEmail = '';
         await sb.auth.signOut();
         this._mode = 'signin';
+        if (typeof clearAuthModeParam === 'function') clearAuthModeParam();
         this.showStatus('Password updated. Sign in with your new password.', 'success');
       } catch (error) {
         showErr('auth-err', error?.message || 'Unable to update your password right now.');
@@ -395,6 +396,7 @@ const Auth = {
     await DB.client.auth.signOut();
     if (window.Router?.clearRememberedPage) Router.clearRememberedPage();
     if (typeof resetSessionState === 'function') resetSessionState();
+    if (typeof clearAuthModeParam === 'function') clearAuthModeParam();
     this._mode = 'signin';
     this.syncUi();
     show('auth-screen');

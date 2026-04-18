@@ -2073,6 +2073,15 @@ function resetSessionState() {
   Modal.close();
 }
 
+function isRecoveryFlowActive() {
+  try {
+    const url = new URL(window.location.href);
+    return String(url.searchParams.get('mode') || '').trim().toLowerCase() === 'recovery';
+  } catch {
+    return false;
+  }
+}
+
 async function handleAuthStateChange(event, session) {
   const nextUser = session?.user || null;
   const currentUserId = State.currentUser?.id || null;
@@ -2086,7 +2095,7 @@ async function handleAuthStateChange(event, session) {
 
   State.currentUser = nextUser;
 
-  if (event === 'PASSWORD_RECOVERY') {
+  if (event === 'PASSWORD_RECOVERY' || isRecoveryFlowActive() || Auth.isRecoveryMode()) {
     Auth.enterRecoveryMode(nextUser?.email || '');
     return;
   }
